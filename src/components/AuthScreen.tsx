@@ -57,13 +57,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const handleGoogleSignIn = () => {
-    setErrorMsg('');
-    setIsLoading(true);
-    // loginWithGoogle() performs a full page redirect to Spring Boot OAuth2.
-    // The app will re-load with ?token=JWT and App.tsx captures it automatically.
-    loginWithGoogle();
-    // Keep spinner visible until redirect happens (~300ms)
-    setTimeout(() => setIsLoading(false), 3000);
+    const backendOAuthUrl = 'https://weather-api-4cv9.onrender.com/oauth2/authorization/google';
+    window.location.href = backendOAuthUrl;
   };
 
   return (

@@ -73,28 +73,53 @@ export const App: React.FC = () => {
   // When Spring Boot redirects back after Google OAuth with ?token=JWT,
   // capture the token, authenticate the session, and clean the URL bar.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const oauthToken = params.get('token');
+  const params = new URLSearchParams(window.location.search);
+  const oauthToken = params.get('token');
+  const oauthUsername = params.get('username') || params.get('name');
 
-    if (oauthToken) {
-      // Strip surrounding quotes in case backend wraps the token
-      const cleanToken = oauthToken.replace(/^["'\s]+|["'\s]+$/g, '');
-      if (cleanToken) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, cleanToken);
-        setUser({
-          id: 'google_op',
-          username: 'GOOGLE_OPERATOR',
-          name: 'GOOGLE OPERATOR',
-          tier: 'PRO_OPERATOR',
-          token: cleanToken,
-          searchesUnlimited: true,
-        });
-        // Remove ?token= from the browser address bar without page reload
-        const cleanUrl = window.location.pathname + window.location.hash;
-        window.history.replaceState({}, document.title, cleanUrl);
-      }
+  // Case 1: Redirected from Google OAuth callback
+  if (oauthToken) {
+    const cleanToken = oauthToken.replace(/^["'\s]+|["'\s]+$/g, '');
+    
+    if (cleanToken) {
+      // 1. Save Token to LocalStorage
+      localStorage.setItem(TOKEN_STORAGE_KEY, cleanToken);
+
+      // 2. Extract dynamic Google Operator name (Fallback to 'GOOGLE OPERATOR')
+      const displayUsername = oauthUsername 
+        ? decodeURIComponent(oauthUsername).toUpperCase() 
+        : 'GOOGLE OPERATOR';
+
+      setUser({
+        id: 'google_op_' + Math.random().toString(36).substring(2, 7),
+        username: displayUsername,
+        name: displayUsername,
+        tier: 'PRO_OPERATOR',
+        token: cleanToken,
+        searchesUnlimited: true,
+      });
+
+      // 3. Remove ?token= and ?username= from URL bar without page reload
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
     }
-  }, []);
+  } 
+  // Case 2: Page Refresh (Restore existing logged-in session from LocalStorage)
+  else {
+    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (savedToken) {
+      const cleanSavedToken = savedToken.replace(/^["'\s]+|["'\s]+$/g, '');
+      setUser({
+        id: 'restored_op',
+        username: 'PRO OPERATOR',
+        name: 'PRO OPERATOR',
+        tier: 'PRO_OPERATOR',
+        token: cleanSavedToken,
+        searchesUnlimited: true,
+      });
+    }
+  }
+}, []);
 
   // ── Initial Weather Load (re-runs when language changes) ──────────────────
   useEffect(() => {
