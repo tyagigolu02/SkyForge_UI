@@ -56,20 +56,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = () => {
     setErrorMsg('');
     setIsLoading(true);
-    try {
-      const res = await loginWithGoogle();
-      if (res.success && res.data) {
-        onAuthSuccess(res.data);
-        onClose();
-      }
-    } catch {
-      setErrorMsg('Google OAuth quantum link failed. Please retry.');
-    } finally {
-      setIsLoading(false);
-    }
+    // loginWithGoogle() performs a full page redirect to Spring Boot OAuth2.
+    // The app will re-load with ?token=JWT and App.tsx captures it automatically.
+    loginWithGoogle();
+    // Keep spinner visible until redirect happens (~300ms)
+    setTimeout(() => setIsLoading(false), 3000);
   };
 
   return (

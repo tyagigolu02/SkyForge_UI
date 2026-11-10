@@ -234,9 +234,9 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               transition={{ type: 'spring', stiffness: 200, damping: 25 }}
               className="relative flex items-start"
             >
-              {/* Scaled gracefully using exact Directive: text-[5.5rem] sm:text-[8rem] lg:text-[12rem] */}
+              {/* REQUIREMENT 3: Responsive temperature typography — never overflows on small screens */}
               <span
-                className="font-display font-extralight tracking-tighter text-[5.5rem] sm:text-[8rem] lg:text-[12rem] leading-none bg-clip-text text-transparent bg-gradient-to-b from-white via-slate-100 to-slate-400 select-none"
+                className="font-display font-extralight tracking-tighter text-[5rem] sm:text-[8rem] lg:text-[11.5rem] leading-none bg-clip-text text-transparent bg-gradient-to-b from-white via-slate-100 to-slate-400 select-none"
                 style={{ filter: 'drop-shadow(0 25px 50px rgba(0,0,0,0.95))' }}
               >
                 {displayTemp(station.tempC)}

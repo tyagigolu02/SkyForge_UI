@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { WeatherStation, WeatherCondition, ThemeConfig, User } from './types';
 import WeatherDashboard from './components/WeatherDashboard';
 import AuthScreen from './components/AuthScreen';
 import { useSearchLimit } from './utils/useSearchLimit';
-import { fetchWeather, getAuthToken, removeAuthToken } from './services/api';
+import { fetchWeather, getAuthToken, removeAuthToken, TOKEN_STORAGE_KEY } from './services/api';
 
 const THEME_STYLES: Record<WeatherCondition, ThemeConfig> = {
   ION_SUPERCELL: {
@@ -37,7 +37,7 @@ const THEME_STYLES: Record<WeatherCondition, ThemeConfig> = {
 export const App: React.FC = () => {
   const { t, i18n } = useTranslation();
 
-  // Authentication & Guest State
+  // ── Authentication & Guest State ──────────────────────────────────────────
   const [user, setUser] = useState<User | null>(() => {
     const token = getAuthToken();
     return token
@@ -47,19 +47,19 @@ export const App: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authTriggerReason, setAuthTriggerReason] = useState<'LIMIT_EXCEEDED' | 'MANUAL'>('LIMIT_EXCEEDED');
 
-  // Meteorological State
+  // ── Meteorological State ──────────────────────────────────────────────────
   const [station, setStation] = useState<WeatherStation | null>(null);
   const [currentQuery, setCurrentQuery] = useState<string>('tokyo');
   const [isCelsius, setIsCelsius] = useState<boolean>(true);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isColdStarting, setIsColdStarting] = useState<boolean>(false);
 
-  // Redis Cache Telemetry State
+  // ── Redis Cache Telemetry ─────────────────────────────────────────────────
   const [cacheLatencyMs, setCacheLatencyMs] = useState<number>(12);
   const [isCachePurging, setIsCachePurging] = useState<boolean>(false);
   const [cacheHits, setCacheHits] = useState<number>(99.84);
 
-  // Guest Search Limit Hook (The 3-Attempt Rule)
+  // ── Guest Search Limit Hook (The 3-Attempt Rule) ──────────────────────────
   const {
     searchesUsed,
     searchesRemaining,
@@ -69,7 +69,34 @@ export const App: React.FC = () => {
     resetSearches,
   } = useSearchLimit(3);
 
-  // Initial Weather Load: Hits Spring Boot backend with active language
+  // ── REQUIREMENT 2: OAuth 2.0 Token Auto-Capture ───────────────────────────
+  // When Spring Boot redirects back after Google OAuth with ?token=JWT,
+  // capture the token, authenticate the session, and clean the URL bar.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthToken = params.get('token');
+
+    if (oauthToken) {
+      // Strip surrounding quotes in case backend wraps the token
+      const cleanToken = oauthToken.replace(/^["'\s]+|["'\s]+$/g, '');
+      if (cleanToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, cleanToken);
+        setUser({
+          id: 'google_op',
+          username: 'GOOGLE_OPERATOR',
+          name: 'GOOGLE OPERATOR',
+          tier: 'PRO_OPERATOR',
+          token: cleanToken,
+          searchesUnlimited: true,
+        });
+        // Remove ?token= from the browser address bar without page reload
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+  }, []);
+
+  // ── Initial Weather Load (re-runs when language changes) ──────────────────
   useEffect(() => {
     async function loadInitial() {
       const lang = i18n.language || 'en';
@@ -81,15 +108,17 @@ export const App: React.FC = () => {
 
       if (res.success && res.data) {
         setStation(res.data);
+        if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
       }
     }
     loadInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language]);
 
   const currentThemeKey: WeatherCondition = station?.theme || 'ION_SUPERCELL';
   const theme: ThemeConfig = THEME_STYLES[currentThemeKey] || THEME_STYLES.ION_SUPERCELL;
 
-  // Anti-Gravity 3D Mouse Parallax Physics
+  // ── Anti-Gravity 3D Mouse Parallax Physics ────────────────────────────────
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const smoothMouseX = useSpring(mouseX, { stiffness: 45, damping: 25 });
@@ -100,29 +129,23 @@ export const App: React.FC = () => {
   const parallaxX = useTransform(smoothMouseX, [-0.5, 0.5], [-14, 14]);
   const parallaxY = useTransform(smoothMouseY, [-0.5, 0.5], [-14, 14]);
 
-  /**
-   * Directive: Disable mouse tracking / 3D parallax physics when screen width < 768px
-   */
+  // REQUIREMENT 3: Disable 3D parallax on mobile (< 768px)
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (window.innerWidth < 768) {
       mouseX.set(0);
       mouseY.set(0);
       return;
     }
     const { clientX, clientY } = e;
-    const { innerWidth, innerHeight } = window;
-    mouseX.set(clientX / innerWidth - 0.5);
-    mouseY.set(clientY / innerHeight - 0.5);
+    mouseX.set(clientX / window.innerWidth - 0.5);
+    mouseY.set(clientY / window.innerHeight - 0.5);
   };
 
-  /**
-   * Search Execution Handler with 3-Attempt Enforcement & Real Backend Fetch
-   */
-  const handleExecuteSearch = async (query: string) => {
+  // ── Search Execution Handler ───────────────────────────────────────────────
+  const handleExecuteSearch = useCallback(async (query: string) => {
     const isAllowed = recordSearch(Boolean(user));
 
     if (!isAllowed) {
-      // 4th attempt triggered: Freeze search & pop AuthScreen modal
       setAuthTriggerReason('LIMIT_EXCEEDED');
       setIsAuthModalOpen(true);
       return;
@@ -131,7 +154,6 @@ export const App: React.FC = () => {
     setIsSearching(true);
     setCurrentQuery(query);
 
-    // Warm-up indicator for Render cold starts
     const coldTimer = setTimeout(() => setIsColdStarting(true), 4000);
 
     try {
@@ -142,9 +164,7 @@ export const App: React.FC = () => {
 
       if (res.success && res.data) {
         setStation(res.data);
-        if (res.cache) {
-          setCacheLatencyMs(res.cache.latencyMs);
-        }
+        if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
       }
     } catch (err) {
       console.error('Atmospheric query fault:', err);
@@ -153,11 +173,9 @@ export const App: React.FC = () => {
       setIsColdStarting(false);
       setIsSearching(false);
     }
-  };
+  }, [user, recordSearch, i18n.language]);
 
-  const handleSelectStation = async (key: string) => {
-    handleExecuteSearch(key);
-  };
+  const handleSelectStation = (key: string) => handleExecuteSearch(key);
 
   const handlePurgeCache = () => {
     if (isCachePurging) return;
@@ -179,12 +197,12 @@ export const App: React.FC = () => {
     setUser(null);
   };
 
-  /**
-   * Directive: Sleek floating 'EN / HI' glass toggle pill
-   */
+  // ── REQUIREMENT 4: Language Toggle — changes locale AND re-fetches weather ─
   const toggleLanguage = () => {
     const nextLang = i18n.language === 'hi' ? 'en' : 'hi';
     i18n.changeLanguage(nextLang);
+    // The useEffect above will fire because i18n.language changed,
+    // triggering a fresh fetchWeather(currentQuery, nextLang) automatically.
   };
 
   return (
@@ -196,34 +214,23 @@ export const App: React.FC = () => {
       {/* Dynamic Atmospheric Canvas (Theme Adaptive) */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <motion.div
-          animate={{
-            scale: [1, 1.25, 1],
-            x: [0, 60, -40, 0],
-            y: [0, -50, 40, 0],
-          }}
+          animate={{ scale: [1, 1.25, 1], x: [0, 60, -40, 0], y: [0, -50, 40, 0] }}
           transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
           className="absolute -top-[20%] -left-[10%] w-[65vw] h-[65vw] rounded-full filter blur-[140px] opacity-45 transition-colors duration-1000"
           style={{ background: theme.ambientGlowPrimary }}
         />
-
         <motion.div
-          animate={{
-            scale: [1.2, 0.95, 1.2],
-            x: [0, -80, 50, 0],
-            y: [0, 60, -50, 0],
-          }}
+          animate={{ scale: [1.2, 0.95, 1.2], x: [0, -80, 50, 0], y: [0, 60, -50, 0] }}
           transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
           className="absolute top-[35%] -right-[15%] w-[60vw] h-[60vw] rounded-full filter blur-[160px] opacity-40 transition-colors duration-1000"
           style={{ background: theme.ambientGlowSecondary }}
         />
-
         <motion.div
           animate={{ opacity: [0.15, 0.3, 0.15] }}
           transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
           className="absolute -bottom-[20%] left-[20%] w-[70vw] h-[50vw] rounded-full filter blur-[180px] transition-colors duration-1000"
           style={{ background: theme.ambientGlowPrimary }}
         />
-
         <div className="absolute inset-0 noise-overlay opacity-30 mix-blend-overlay" />
         <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -239,7 +246,7 @@ export const App: React.FC = () => {
       {/* Top Command Bar Header */}
       <header className="relative z-30 w-full px-4 sm:px-8 md:px-12 pt-6 pb-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          
+
           {/* Brand Designation */}
           <div className="flex items-center gap-4">
             <motion.div
@@ -252,7 +259,6 @@ export const App: React.FC = () => {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </motion.div>
-
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-display font-black tracking-widest text-lg bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400">
@@ -268,10 +274,10 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Controls: Floating EN/HI Toggle, Redis Telemetry, Units, Operator Pill */}
+          {/* Right Controls */}
           <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center">
-            
-            {/* Directive: Sleek, floating 'EN / HI' glass toggle pill */}
+
+            {/* REQUIREMENT 4: Floating EN / HI glass toggle pill */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -365,7 +371,7 @@ export const App: React.FC = () => {
               </motion.button>
             )}
 
-            {/* Test Helper: Reset Search Quota */}
+            {/* Reset Search Quota (dev helper) */}
             {!user && searchesUsed > 0 && (
               <button
                 type="button"
@@ -383,13 +389,7 @@ export const App: React.FC = () => {
       {/* Main Spatial Dashboard */}
       <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 md:px-12 pt-2 pb-24">
         <motion.div
-          style={{
-            rotateX,
-            rotateY,
-            x: parallaxX,
-            y: parallaxY,
-            transformStyle: 'preserve-3d',
-          }}
+          style={{ rotateX, rotateY, x: parallaxX, y: parallaxY, transformStyle: 'preserve-3d' }}
           className="transition-transform duration-200 ease-out"
         >
           {station ? (
@@ -431,4 +431,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-
