@@ -1,13 +1,13 @@
 /**
  * SkyForge Real Backend API Service
- * Production TypeScript implementation connecting to Spring Boot deployed at:
- * https://weather-api-4cv9.onrender.com
+ * Connects to Spring Boot backend at https://weather-api-4cv9.onrender.com
  */
 
 import {
   WeatherStation,
   WeatherCondition,
   DailyForecast,
+  HourlyForecast,
   User,
   LoginPayload,
   RegisterPayload,
@@ -44,11 +44,13 @@ export function setAuthToken(token: string | null): void {
 export function removeAuthToken(): void {
   try {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch { }
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Theme Derivation
+// Meteorological Utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
 function deriveAtmosphericTheme(tempC: number, condition = ''): WeatherCondition {
@@ -65,144 +67,166 @@ function deriveAtmosphericTheme(tempC: number, condition = ''): WeatherCondition
   return 'ABYSSAL_AURORA';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility: convert a unix timestamp (seconds) or "HH:MM" string to "HH:MM"
-// ─────────────────────────────────────────────────────────────────────────────
-
-function toHHMM(value: any): string | undefined {
+function toHHMM(value: unknown, timezoneOffsetSec?: number): string | undefined {
   if (value == null) return undefined;
-  if (typeof value === 'number') {
-    // Unix timestamp in seconds
-    const d = new Date(value * 1000);
-    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    const shifted = timezoneOffsetSec != null ? (value + timezoneOffsetSec) * 1000 : value * 1000;
+    const d = new Date(shifted);
+    const hours = timezoneOffsetSec != null ? d.getUTCHours() : d.getHours();
+    const mins = timezoneOffsetSec != null ? d.getUTCMinutes() : d.getMinutes();
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
   }
-  if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) {
-    return value.slice(0, 5);
+  if (typeof value === 'string') {
+    const match = value.match(/(\d{1,2}):(\d{2})/);
+    if (match) {
+      return `${match[1].padStart(2, '0')}:${match[2]}`;
+    }
+    return value;
   }
-  return String(value);
+  return undefined;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility: derive AQI level label from numeric AQI
-// ─────────────────────────────────────────────────────────────────────────────
-
-function deriveAqiLevel(aqi: number | null | undefined): string | undefined {
-  if (aqi == null) return undefined;
+function deriveAqiLevel(aqi: number): string {
+  // Supports both Level 1-5 (OpenWeather) and 1-500 (US EPA)
+  if (aqi >= 1 && aqi <= 5) {
+    if (aqi === 1) return 'Good';
+    if (aqi === 2) return 'Moderate';
+    if (aqi === 3 || aqi === 4) return 'Unhealthy';
+    return 'Severe';
+  }
   if (aqi <= 50) return 'Good';
   if (aqi <= 100) return 'Moderate';
-  if (aqi <= 150) return 'Unhealthy for Sensitive';
   if (aqi <= 200) return 'Unhealthy';
-  if (aqi <= 300) return 'Very Unhealthy';
-  return 'Hazardous';
+  return 'Severe';
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility: determine iconType from a condition string
-// ─────────────────────────────────────────────────────────────────────────────
 
 function iconFromCondition(cond: string): DailyForecast['iconType'] {
   const c = cond.toLowerCase();
   if (c.includes('storm') || c.includes('thunder')) return 'storm';
-  if (c.includes('snow') || c.includes('ice') || c.includes('frost') || c.includes('cryo')) return 'snow';
+  if (c.includes('snow') || c.includes('ice') || c.includes('frost')) return 'snow';
   if (c.includes('rain') || c.includes('drizzle') || c.includes('shower')) return 'rain';
   if (c.includes('aurora')) return 'aurora';
-  if (c.includes('cloud') || c.includes('overcast') || c.includes('mist') || c.includes('fog')) return 'cloud';
+  if (c.includes('cloud') || c.includes('overcast') || c.includes('mist') || c.includes('fog') || c.includes('haze')) {
+    return 'cloud';
+  }
   return 'sun';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DTO Transformer: Spring Boot → Frontend WeatherStation
-//
-// Spring Boot DTO field names accepted (graceful fallback chain):
-//   temperature | temp | currentTemp | main.temp        → tempC
-//   feelsLike   | feels_like | main.feels_like          → feelsLikeC
-//   humidity    | main.humidity                         → humidity
-//   cityName    | city | name                           → city
-//   windSpeed   | wind.speed                            → windSpeed
-//   windAngle   | wind.deg                              → windAngle
-//   pressureHpa | pressure | main.pressure              → pressureHpa
-//   uvIndex     | uv                                    → uvIndex
-//   visibilityKm| visibility (meters)                   → visibilityKm
-//   high | tempMax | temp_max | main.temp_max           → highC
-//   low  | tempMin | temp_min | main.temp_min           → lowC
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
-  // Unwrap common Spring Boot wrapper shapes: { data: {...} } or { weather: {...} }
   const data: any = raw?.data ?? raw?.weather ?? raw ?? {};
 
-  // ── Temperature ──────────────────────────────────────────────────────────
+  // Temperature parsing (auto-converts Kelvin if value > 100)
   const rawTemp = data.temperature ?? data.temp ?? data.currentTemp ?? data.main?.temp ?? 22;
-  const tempC = Math.round(rawTemp > 100 ? rawTemp - 273.15 : Number(rawTemp));
+  const tempC = Math.round(rawTemp > 100 ? Number(rawTemp) - 273.15 : Number(rawTemp));
 
-  const rawFeels = data.feelsLike ?? data.feels_like ?? data.main?.feels_like ?? tempC - 2;
-  const feelsLikeC = Math.round(rawFeels > 100 ? rawFeels - 273.15 : Number(rawFeels));
+  const rawFeels = data.feelsLike ?? data.feels_like ?? data.main?.feels_like ?? tempC - 1;
+  const feelsLikeC = Math.round(rawFeels > 100 ? Number(rawFeels) - 273.15 : Number(rawFeels));
 
   const rawHigh = data.high ?? data.tempMax ?? data.temp_max ?? data.main?.temp_max ?? tempC + 4;
-  const highC = Math.round(rawHigh > 100 ? rawHigh - 273.15 : Number(rawHigh));
+  const highC = Math.round(rawHigh > 100 ? Number(rawHigh) - 273.15 : Number(rawHigh));
 
   const rawLow = data.low ?? data.tempMin ?? data.temp_min ?? data.main?.temp_min ?? tempC - 4;
-  const lowC = Math.round(rawLow > 100 ? rawLow - 273.15 : Number(rawLow));
+  const lowC = Math.round(rawLow > 100 ? Number(rawLow) - 273.15 : Number(rawLow));
 
-  // ── Location ──────────────────────────────────────────────────────────────
+  // Location metadata
   const city = String(
-    data.cityName ?? data.city ?? data.name ?? query ?? 'ORBITAL STATION'
+    data.cityName ?? data.city ?? data.name ?? (query || 'New Delhi')
   ).toUpperCase();
-  const lat = Number(data.lat ?? data.coord?.lat ?? 35.6762);
-  const lon = Number(data.lon ?? data.coord?.lon ?? 139.6503);
+  const lat = Number(data.lat ?? data.latitude ?? data.coord?.lat ?? 28.6139);
+  const lon = Number(data.lon ?? data.longitude ?? data.coord?.lon ?? 77.209);
+  const timezoneOffsetSec = typeof data.timezone === 'number' ? data.timezone : undefined;
 
-  // ── Condition ─────────────────────────────────────────────────────────────
+  // Condition & adaptive atmospheric theme
   const condition = String(
     data.condition ??
     data.description ??
     data.weather?.[0]?.description ??
     data.weather?.[0]?.main ??
-    'ATMOSPHERIC STREAM // OPTIMAL'
+    'CLEAR SKY'
   ).toUpperCase();
-
   const theme = deriveAtmosphericTheme(tempC, condition);
 
-  // ── Wind ─────────────────────────────────────────────────────────────────
-  const windSpeed = Number(data.windSpeed ?? data.wind_speed ?? data.wind?.speed ?? 18.5);
-  const windAngle = Math.round(Number(data.windAngle ?? data.wind_deg ?? data.wind?.deg ?? 45));
+  // Wind telemetry (convert m/s from OpenWeather if numeric windSpeed < 25 with data.wind?.speed? Spring Boot sends km/h or m/s; keep consistent km/h)
+  const rawWind = data.windSpeed ?? data.wind_speed ?? (data.wind?.speed != null ? Number(data.wind.speed) * 3.6 : 14.2);
+  const windSpeed = Number(rawWind);
+  const windAngle = Math.round(Number(data.windAngle ?? data.wind_deg ?? data.wind?.deg ?? 45)) % 360;
   const windDirections = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
   const windDirection = data.windDirection ?? windDirections[Math.floor((windAngle + 11.25) / 22.5) % 16];
-  const gusts = Number(data.gusts ?? data.wind?.gust ?? windSpeed * 1.4);
+  const gusts = Number(data.gusts ?? data.windGust ?? (data.wind?.gust ? Number(data.wind.gust) * 3.6 : windSpeed * 1.35));
 
-  // ── Humidity ─────────────────────────────────────────────────────────────
-  const humidity = Math.round(Number(data.humidity ?? data.main?.humidity ?? 65));
-  const vaporStatus =
-    humidity > 80 ? 'Supersaturated Vapor' : humidity > 50 ? 'Equilibrium Dewpoint' : 'Arid Atmosphere';
-
-  // ── UV ───────────────────────────────────────────────────────────────────
-  const uvIndex = Number(data.uvIndex ?? data.uv ?? data.uvi ?? Math.max(1, tempC / 3));
-  const uvDescription = uvIndex > 8 ? 'Extreme (Shield Req.)' : uvIndex > 5 ? 'Elevated Radiation' : 'Nominal Flux';
-
-  // ── Visibility ───────────────────────────────────────────────────────────
-  // Spring Boot may return meters (10000) or km (10.0); detect by magnitude
-  const rawVis = data.visibilityKm ?? data.visibility_km ?? (
-    data.visibility != null
-      ? (Number(data.visibility) > 500 ? Number(data.visibility) / 1000 : Number(data.visibility))
-      : 42.5
+  // Humidity & Dew Point
+  const humidity = Math.min(100, Math.max(0, Math.round(Number(data.humidity ?? data.main?.humidity ?? 62))));
+  const dewPointC = Math.round(
+    Number(data.dewPoint ?? data.dew_point ?? (tempC - (100 - humidity) / 5))
   );
-  const visibilityKm = Number(rawVis);
+  const vaporStatus =
+    humidity > 78 ? 'High Humidity' : humidity > 40 ? 'Comfortable' : 'Dry Air';
+
+  // UV Index
+  const uvIndex = Number(
+    Number(data.uvIndex ?? data.uv ?? data.uvi ?? Math.max(1, Math.min(11, Math.round(tempC / 4)))).toFixed(1)
+  );
+  const uvDescription =
+    uvIndex >= 8 ? 'Very High UV' : uvIndex >= 6 ? 'High UV' : uvIndex >= 3 ? 'Moderate UV' : 'Low UV';
+
+  // Optical Visibility & Cloud Cover
+  const rawVis =
+    data.visibilityKm ??
+    data.visibility_km ??
+    (data.visibility != null
+      ? Number(data.visibility) > 500
+        ? Number(data.visibility) / 1000
+        : Number(data.visibility)
+      : 16.0);
+  const visibilityKm = Number(Number(rawVis).toFixed(1));
   const visibilityStatus =
-    visibilityKm > 30 ? 'Cryo-Transparent' : visibilityKm > 10 ? 'High Optical Clarity' : 'Atmospheric Haze';
+    visibilityKm >= 15 ? 'Clear Visibility' : visibilityKm >= 6 ? 'Moderate Clarity' : 'Hazy / Reduced';
 
-  // ── Pressure ─────────────────────────────────────────────────────────────
-  const pressureHpa = Math.round(Number(
-    data.pressureHpa ?? data.pressure ?? data.main?.pressure ?? 1013
-  ));
-  const pressureTendency = data.pressureTendency ?? '+1.8 hPa / 3h (Stable)';
+  const cloudCover = Math.min(
+    100,
+    Math.max(0, Math.round(Number(data.cloudCover ?? data.clouds?.all ?? (condition.includes('CLEAR') ? 12 : 48))))
+  );
 
-  // ── 24-hour Forecast ─────────────────────────────────────────────────────
-  let forecast24h: WeatherStation['forecast24h'] = [];
+  // Barometric Pressure
+  const pressureHpa = Math.round(
+    Number(data.pressureHpa ?? data.pressure ?? data.main?.pressure ?? 1013)
+  );
+  const pressureTendency =
+    data.pressureTendency ??
+    (pressureHpa >= 1016 ? 'High · Steady' : pressureHpa <= 1006 ? 'Low · Falling' : 'Normal · Stable');
+
+  // Air Quality Index (AQI: supports 1-500 or Level 1-5)
+  const rawAqi = data.aqi ?? data.airQualityIndex ?? data.airQuality?.aqi ?? data.list?.[0]?.main?.aqi;
+  const estimatedAqi = Math.max(
+    18,
+    Math.min(220, Math.round(45 + (10 - Math.min(10, visibilityKm)) * 12 + (humidity > 80 ? 15 : 0)))
+  );
+  const aqi = rawAqi != null ? Number(rawAqi) : estimatedAqi;
+  const aqiLevel = data.aqiLevel ?? deriveAqiLevel(aqi);
+  const aqiDominant = String(
+    data.dominantPollutant ?? data.aqiDominant ?? data.airQuality?.dominant ?? (aqi > 100 ? 'PM10' : 'PM2.5')
+  );
+
+  // Celestial Cycles: Sunrise & Sunset
+  const rawSunrise = data.sunrise ?? data.sys?.sunrise;
+  const rawSunset = data.sunset ?? data.sys?.sunset;
+  const sunrise = toHHMM(rawSunrise, timezoneOffsetSec) ?? '06:18';
+  const sunset = toHHMM(rawSunset, timezoneOffsetSec) ?? '18:14';
+  const sunriseUnix = typeof rawSunrise === 'number' ? rawSunrise : undefined;
+  const sunsetUnix = typeof rawSunset === 'number' ? rawSunset : undefined;
+
+  // 24-Hour Hourly Forecast
+  let forecast24h: HourlyForecast[] = [];
   if (Array.isArray(data.forecast) && data.forecast.length > 0) {
     forecast24h = data.forecast.map((f: any, i: number) => ({
-      time: f.time ?? `${String(i * 3).padStart(2, '0')}:00`,
+      time: f.time ?? `${String((i * 3) % 24).padStart(2, '0')}:00`,
       tempC: Math.round(Number(f.temp ?? f.tempC ?? f.temperature ?? tempC)),
       pop: Math.min(100, Math.max(0, Math.round(Number(f.pop ?? f.precipitation ?? 15)))),
-      iconType: (f.iconType ?? (String(f.condition ?? '').toLowerCase().includes('rain') ? 'rain' : 'sun')) as WeatherStation['forecast24h'][0]['iconType'],
+      iconType: f.iconType ?? iconFromCondition(String(f.condition ?? condition)),
     }));
   } else {
     const hours = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'];
@@ -210,86 +234,121 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     forecast24h = hours.map((hour, idx) => ({
       time: hour,
       tempC: tempC + tempOffsets[idx],
-      pop: Math.min(100, Math.max(5, humidity - 30 + tempOffsets[idx] * -2)),
-      iconType: (
-        condition.includes('RAIN') ? 'rain'
-        : condition.includes('SNOW') ? 'snow'
-        : idx >= 3 && idx <= 5 ? 'sun'
-        : 'cloud'
-      ) as WeatherStation['forecast24h'][0]['iconType'],
+      pop: Math.min(100, Math.max(5, humidity - 35 + idx * 3)),
+      iconType: condition.includes('RAIN')
+        ? 'rain'
+        : condition.includes('SNOW')
+          ? 'snow'
+          : idx >= 3 && idx <= 5
+            ? 'sun'
+            : 'cloud',
     }));
   }
 
-  // ── Dew Point ─────────────────────────────────────────────────────────────
-  const dewPointC: number = data.dewPoint ?? data.dew_point ?? Math.round(tempC - ((100 - humidity) / 5));
-
-  // ── Cloud Cover ───────────────────────────────────────────────────────────
-  const cloudCover: number = data.cloudCover ?? data.clouds?.all ?? 50;
-
-  // ── Air Quality Index ─────────────────────────────────────────────────────
-  const aqi: number | null = data.aqi ?? data.airQualityIndex ?? null;
-  const aqiLevel: string | undefined = deriveAqiLevel(aqi);
-  const aqiDominant: string = data.dominantPollutant ?? data.aqiDominant ?? 'PM2.5';
-
-  // ── Sunrise / Sunset ──────────────────────────────────────────────────────
-  const sunrise: string | undefined = toHHMM(data.sunrise ?? data.sys?.sunrise);
-  const sunset: string | undefined = toHHMM(data.sunset ?? data.sys?.sunset);
-
-  // ── 7-day Forecast ────────────────────────────────────────────────────────
+  // 7-Day Forecast
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   let forecast7d: DailyForecast[] = [];
-
   const rawDaily: any[] | undefined =
-    Array.isArray(data.forecast7d) && data.forecast7d.length > 0 ? data.forecast7d
-    : Array.isArray(data.daily) && data.daily.length > 0 ? data.daily
-    : undefined;
+    Array.isArray(data.forecast7d) && data.forecast7d.length > 0
+      ? data.forecast7d
+      : Array.isArray(data.daily) && data.daily.length > 0
+        ? data.daily
+        : undefined;
 
   if (rawDaily) {
     forecast7d = rawDaily.slice(0, 7).map((d: any, i: number) => {
-      const rawDayHigh = d.high ?? d.highC ?? d.temp?.max ?? d.tempMax ?? d.temperature ?? tempC + 3;
+      const rawDayHigh = d.high ?? d.highC ?? d.temp?.max ?? d.tempMax ?? tempC + 3;
       const rawDayLow = d.low ?? d.lowC ?? d.temp?.min ?? d.tempMin ?? tempC - 3;
-      const dayHighC = Math.round(rawDayHigh > 100 ? rawDayHigh - 273.15 : Number(rawDayHigh));
-      const dayLowC = Math.round(rawDayLow > 100 ? rawDayLow - 273.15 : Number(rawDayLow));
+      const dayHighC = Math.round(rawDayHigh > 100 ? Number(rawDayHigh) - 273.15 : Number(rawDayHigh));
+      const dayLowC = Math.round(rawDayLow > 100 ? Number(rawDayLow) - 273.15 : Number(rawDayLow));
       const dayCondition = String(
-        d.condition ?? d.description ?? d.weather?.[0]?.description ?? d.weather?.[0]?.main ?? condition
+        d.condition ?? d.description ?? d.weather?.[0]?.main ?? condition
       ).toUpperCase();
-      const dayPop = Math.min(100, Math.max(0, Math.round(Number(d.pop ?? d.precipitation ?? d.precipProbability ?? 20))));
+      const dayPop = Math.min(100, Math.max(0, Math.round(Number(d.pop ?? d.precipitation ?? 20))));
       const dateLabel = d.date
-        ? (typeof d.date === 'number'
-            ? DAY_NAMES[new Date(d.date * 1000).getUTCDay()]
-            : (DAY_NAMES[new Date(String(d.date)).getDay()] ?? d.date))
+        ? typeof d.date === 'number'
+          ? DAY_NAMES[new Date(d.date * 1000).getUTCDay()]
+          : String(d.date)
         : DAY_NAMES[(new Date().getDay() + i) % 7];
       return {
         date: dateLabel,
         highC: dayHighC,
         lowC: dayLowC,
         pop: dayPop,
-        iconType: (d.iconType ?? iconFromCondition(dayCondition)) as DailyForecast['iconType'],
+        iconType: d.iconType ?? iconFromCondition(dayCondition),
         condition: dayCondition,
       };
     });
   } else {
-    // Synthetic 7-day generation based on current conditions
-    const highOffsets = [0, 2, -1, 3, 1, -2, 4];
-    const lowOffsets  = [0, 1, -2, 2, -1, -3, 3];
-    const popBases    = [15, 20, 45, 10, 30, 60, 5];
+    const highOffsets = [0, 2, -1, 3, 1, -2, 2];
+    const lowOffsets = [0, 1, -2, 1, -1, -3, 1];
+    const popBases = [15, 20, 45, 10, 30, 55, 10];
     for (let i = 0; i < 7; i++) {
-      const dayHighC = highC + highOffsets[i];
-      const dayLowC  = lowC  + lowOffsets[i];
-      const dayPop   = Math.min(100, Math.max(0, popBases[i] + (humidity - 50)));
-      const syntheticCond =
-        dayPop > 55 ? (dayHighC <= 0 ? 'SNOW' : 'RAIN')
-        : dayHighC >= 28 ? 'CLEAR SKY'
-        : 'PARTLY CLOUDY';
+      const dHigh = highC + highOffsets[i];
+      const dLow = lowC + lowOffsets[i];
+      const dPop = Math.min(100, Math.max(5, Math.round(popBases[i] + (humidity - 55) * 0.4)));
+      const dCond =
+        dPop >= 50 ? (dHigh <= 1 ? 'SNOW' : 'LIGHT RAIN') : dHigh >= 28 ? 'CLEAR SKY' : 'PARTLY CLOUDY';
       forecast7d.push({
         date: DAY_NAMES[(new Date().getDay() + i) % 7],
-        highC: dayHighC,
-        lowC: dayLowC,
-        pop: dayPop,
-        iconType: iconFromCondition(syntheticCond),
-        condition: syntheticCond,
+        highC: dHigh,
+        lowC: dLow,
+        pop: dPop,
+        iconType: iconFromCondition(dCond),
+        condition: dCond,
       });
     }
+  }
+
+  // Past 3 Days Historical Weather Data (maps real data if provided, else deterministic baseline)
+  let history3d: DailyForecast[] = [];
+  const rawHistory: any[] | undefined =
+    Array.isArray(data.history3d) && data.history3d.length > 0
+      ? data.history3d
+      : Array.isArray(data.history) && data.history.length > 0
+        ? data.history
+        : Array.isArray(data.past3Days) && data.past3Days.length > 0
+          ? data.past3Days
+          : undefined;
+
+  if (rawHistory) {
+    history3d = rawHistory.slice(0, 3).map((h: any, idx: number) => {
+      const hCond = String(h.condition ?? h.description ?? condition).toUpperCase();
+      return {
+        date: h.date ?? (idx === 0 ? 'Yesterday' : `${idx + 1} Days Ago`),
+        highC: Math.round(Number(h.highC ?? h.high ?? tempC + 1)),
+        lowC: Math.round(Number(h.lowC ?? h.low ?? tempC - 4)),
+        pop: Math.min(100, Math.max(0, Math.round(Number(h.pop ?? h.precipitation ?? 10)))),
+        humidity: h.humidity != null ? Math.round(Number(h.humidity)) : humidity,
+        iconType: h.iconType ?? iconFromCondition(hCond),
+        condition: hCond,
+      };
+    });
+  } else {
+    const pastConfigs = [
+      { dHigh: -1, dLow: -1, popOffset: -5, humOffset: -3 },
+      { dHigh: -2, dLow: -3, popOffset: 15, humOffset: 6 },
+      { dHigh: 1, dLow: -2, popOffset: -10, humOffset: -5 },
+    ];
+    history3d = pastConfigs.map((cfg, idx) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (idx + 1));
+      const label =
+        idx === 0
+          ? 'Yesterday'
+          : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const pPop = Math.min(100, Math.max(5, Math.round(humidity * 0.35 + cfg.popOffset)));
+      const pCond = pPop >= 45 ? (highC <= 1 ? 'LIGHT SNOW' : 'SCATTERED SHOWERS') : highC >= 26 ? 'SUNNY' : 'MOSTLY CLEAR';
+      return {
+        date: label,
+        highC: highC + cfg.dHigh,
+        lowC: lowC + cfg.dLow,
+        pop: pPop,
+        humidity: Math.min(100, Math.max(15, humidity + cfg.humOffset)),
+        iconType: iconFromCondition(pCond),
+        condition: pCond,
+      };
+    });
   }
 
   return {
@@ -297,8 +356,8 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     city,
     code: city.slice(0, 3) + '-0' + (Math.abs(Math.round(lat)) % 99),
     latLong: `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'} · ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`,
-    elevation: data.elevation ?? '+48m ORBITAL TELEMETRY',
-    zenithTime: data.zenithTime ?? '12:30 UTC',
+    elevation: data.elevation ?? 'SURFACE STATION',
+    zenithTime: data.zenithTime ?? '12:18 LOCAL',
     tempC,
     feelsLikeC,
     highC,
@@ -311,9 +370,9 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     gusts: Number(gusts.toFixed(1)),
     humidity,
     vaporStatus,
-    uvIndex: Number(uvIndex.toFixed(1)),
+    uvIndex,
     uvDescription,
-    visibilityKm: Number(visibilityKm.toFixed(1)),
+    visibilityKm,
     visibilityStatus,
     pressureHpa,
     pressureTendency,
@@ -325,20 +384,21 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     aqiDominant,
     sunrise,
     sunset,
+    sunriseUnix,
+    sunsetUnix,
+    timezoneOffsetSec,
     forecast7d,
+    history3d,
   };
 }
 
-/**
- * Alias kept for internal use and backward-compatibility.
- */
 export const normalizeBackendWeather = mapBackendToFrontend;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchWeather — GET /api/weather/{city}?lang={lang}
+// Weather API Queries
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function fetchWeather(city = 'tokyo', lang = 'en'): Promise<ApiResponse<WeatherStation>> {
+export async function fetchWeather(city = 'New Delhi', lang = 'en'): Promise<ApiResponse<WeatherStation>> {
   const startTime = Date.now();
   const token = getAuthToken();
 
@@ -353,7 +413,6 @@ export async function fetchWeather(city = 'tokyo', lang = 'en'): Promise<ApiResp
   const endpoint = `${BASE_URL}/api/weather/${encodeURIComponent(city)}?lang=${encodeURIComponent(lang)}`;
 
   try {
-    // 25 s timeout — allows Render free-tier cold-start without hanging the UI
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -364,7 +423,7 @@ export async function fetchWeather(city = 'tokyo', lang = 'en'): Promise<ApiResp
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      throw new Error(errText || `Atmospheric query failed (HTTP ${res.status})`);
+      throw new Error(errText || `Weather query failed (HTTP ${res.status})`);
     }
 
     const json = await res.json();
@@ -376,33 +435,33 @@ export async function fetchWeather(city = 'tokyo', lang = 'en'): Promise<ApiResp
       cache: {
         hit: true,
         latencyMs: Math.max(4, elapsedMs),
-        node: 'RENDER-EDGE // SPRING-BOOT',
+        node: 'REDIS-EDGE',
       },
     };
   } catch (error: any) {
     const elapsedMs = Date.now() - startTime;
-    console.warn(`SkyForge Weather API query for "${city}" encountered:`, error.message);
+    console.warn(`SkyForge API query for "${city}" failed:`, error.message);
 
-    // Graceful fallback so the UI stays operational during cold-starts
     const fallbackStation = mapBackendToFrontend(
-      { cityName: city.toUpperCase(), temperature: 22, condition: 'ATMOSPHERIC MATRIX // CACHED STREAM', humidity: 65 },
+      { cityName: city.toUpperCase(), temperature: 22, condition: 'CACHED TELEMETRY', humidity: 58 },
       city
     );
 
     return {
       success: true,
       isFallback: true,
-      error: error.name === 'AbortError' ? 'Cold start delay: Server waking up...' : error.message,
+      error: error.name === 'AbortError' ? 'Server waking up...' : error.message,
       data: fallbackStation,
-      cache: { hit: false, latencyMs: elapsedMs, node: 'EDGE-SURFACE-ENCLAVE' },
+      cache: { hit: false, latencyMs: elapsedMs, node: 'LOCAL-FALLBACK' },
     };
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// fetchWeatherByCoords — GET /api/weather/coords?lat={lat}&lon={lon}&lang={lang}
-// ─────────────────────────────────────────────────────────────────────────────
-
+/**
+ * Fetches weather by exact coordinates:
+ * 1) Tries Spring Boot GET /api/weather/coords?lat=...&lon=...&lang=...
+ * 2) If /coords isn't available on the backend, reverse-geocodes via free client API and queries /api/weather/{city}
+ */
 export async function fetchWeatherByCoords(
   lat: number,
   lon: number,
@@ -420,64 +479,80 @@ export async function fetchWeatherByCoords(
   }
 
   const endpoint = `${BASE_URL}/api/weather/coords?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&lang=${encodeURIComponent(lang)}`;
-  const coordLabel = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  const coordLabel = `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
 
   try {
-    // 25 s timeout — allows Render free-tier cold-start without hanging the UI
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
     clearTimeout(timeoutId);
 
-    const elapsedMs = Date.now() - startTime;
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(errText || `Coordinate atmospheric query failed (HTTP ${res.status})`);
+    if (res.ok) {
+      const elapsedMs = Date.now() - startTime;
+      const json = await res.json();
+      const station = mapBackendToFrontend(json, coordLabel);
+      return {
+        success: true,
+        data: station,
+        cache: {
+          hit: true,
+          latencyMs: Math.max(4, elapsedMs),
+          node: 'REDIS-EDGE',
+        },
+      };
     }
 
-    const json = await res.json();
-    const station = mapBackendToFrontend(json, coordLabel);
+    // Fallback: reverse-geocode coordinates to city name and query standard city endpoint
+    const geoRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&localityLanguage=en`
+    );
+    if (geoRes.ok) {
+      const geoData = await geoRes.json();
+      const resolvedCity = geoData.city || geoData.locality || geoData.principalSubdivision;
+      if (resolvedCity) {
+        return fetchWeather(resolvedCity, lang);
+      }
+    }
 
-    return {
-      success: true,
-      data: station,
-      cache: {
-        hit: true,
-        latencyMs: Math.max(4, elapsedMs),
-        node: 'RENDER-EDGE // SPRING-BOOT',
-      },
-    };
+    throw new Error(`Coordinate weather request failed (${res.status})`);
   } catch (error: any) {
     const elapsedMs = Date.now() - startTime;
-    console.warn(`SkyForge Weather API coord query (${coordLabel}) encountered:`, error.message);
+    console.warn(`SkyForge coord query (${coordLabel}) fell back:`, error.message);
 
-    // Graceful fallback so the UI stays operational during cold-starts
+    // Try reverse geocode even on network/CORS error of /coords
+    try {
+      const geoRes = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&localityLanguage=en`
+      );
+      if (geoRes.ok) {
+        const geoData = await geoRes.json();
+        const resolvedCity = geoData.city || geoData.locality || geoData.principalSubdivision;
+        if (resolvedCity) {
+          return fetchWeather(resolvedCity, lang);
+        }
+      }
+    } catch {
+      // Ignore secondary reverse-geocode failure
+    }
+
     const fallbackStation = mapBackendToFrontend(
-      {
-        lat,
-        lon,
-        temperature: 22,
-        condition: 'ATMOSPHERIC MATRIX // CACHED STREAM',
-        humidity: 65,
-      },
-      coordLabel
+      { lat, lon, cityName: 'CURRENT LOCATION', temperature: 24, condition: 'LOCAL STATION', humidity: 60 },
+      'Current Location'
     );
 
     return {
       success: true,
       isFallback: true,
-      error: error.name === 'AbortError' ? 'Cold start delay: Server waking up...' : error.message,
+      error: error.message,
       data: fallbackStation,
-      cache: { hit: false, latencyMs: elapsedMs, node: 'EDGE-SURFACE-ENCLAVE' },
+      cache: { hit: false, latencyMs: elapsedMs, node: 'LOCAL-FALLBACK' },
     };
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// loginUser — POST /api/users/login
-// Handles: raw JWT string, JSON "token" string, JSON { token: "..." } object
+// Authentication Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function loginUser(payload: LoginPayload): Promise<ApiResponse<User>> {
@@ -508,20 +583,16 @@ export async function loginUser(payload: LoginPayload): Promise<ApiResponse<User
   if (contentType.includes('application/json')) {
     const parsed = await res.json();
     if (typeof parsed === 'string') {
-      // Spring Boot returned the JWT as a bare JSON string: "eyJ..."
       token = parsed;
     } else if (parsed && typeof parsed === 'object') {
       userData = parsed;
       token = parsed.token ?? parsed.jwt ?? parsed.accessToken ?? parsed.jwtToken ?? '';
     }
   } else {
-    // Plain-text response — the entire body is the JWT
     token = await res.text();
   }
 
-  // Strip accidental JSON quotes and whitespace: "eyJ..." → eyJ...
   token = token.replace(/^["'\s]+|["'\s]+$/g, '');
-
   if (!token) {
     throw new Error('Authentication succeeded but token payload was empty.');
   }
@@ -529,7 +600,7 @@ export async function loginUser(payload: LoginPayload): Promise<ApiResponse<User
   localStorage.setItem(TOKEN_STORAGE_KEY, token);
 
   const user: User = {
-    id: userData.id ?? userData.userId ?? ('op_' + Math.random().toString(36).substring(2, 8)),
+    id: userData.id ?? userData.userId ?? 'op_' + Math.random().toString(36).substring(2, 8),
     username: payload.username,
     name: userData.name ?? userData.username ?? payload.username.split('@')[0].toUpperCase(),
     tier: 'PRO_OPERATOR',
@@ -539,10 +610,6 @@ export async function loginUser(payload: LoginPayload): Promise<ApiResponse<User
 
   return { success: true, data: user };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// registerUser — POST /api/users/register
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function registerUser(payload: RegisterPayload): Promise<ApiResponse<User>> {
   const endpoint = `${BASE_URL}/api/users/register`;
@@ -571,9 +638,10 @@ export async function registerUser(payload: RegisterPayload): Promise<ApiRespons
 
   if (contentType.includes('application/json')) {
     userData = await res.json();
-    token = typeof userData === 'string'
-      ? userData
-      : (userData.token ?? userData.jwt ?? userData.accessToken ?? '');
+    token =
+      typeof userData === 'string'
+        ? userData
+        : (userData.token ?? userData.jwt ?? userData.accessToken ?? '');
   } else {
     token = await res.text();
   }
@@ -584,7 +652,7 @@ export async function registerUser(payload: RegisterPayload): Promise<ApiRespons
   }
 
   const user: User = {
-    id: userData.id ?? userData.userId ?? ('op_' + Math.random().toString(36).substring(2, 6)),
+    id: userData.id ?? userData.userId ?? 'op_' + Math.random().toString(36).substring(2, 6),
     username: payload.username,
     email: payload.email,
     name: payload.username.toUpperCase(),
@@ -595,12 +663,6 @@ export async function registerUser(payload: RegisterPayload): Promise<ApiRespons
 
   return { success: true, data: user };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// loginWithGoogle — Redirects to Spring Boot OAuth2 endpoint
-// The backend will redirect back to the frontend with ?token=JWT in the URL.
-// App.tsx captures that token via its OAuth query-param useEffect.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function loginWithGoogle(): void {
   const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);

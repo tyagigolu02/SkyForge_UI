@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, useMotionValue, useSpring, useTransform, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { WeatherStation, WeatherCondition, ThemeConfig, User } from './types';
 import WeatherDashboard from './components/WeatherDashboard';
 import AuthScreen from './components/AuthScreen';
 import { useSearchLimit } from './utils/useSearchLimit';
-import { fetchWeather, getAuthToken, removeAuthToken, TOKEN_STORAGE_KEY } from './services/api';
+import { getMostRecentSearch } from './utils/useRecentSearches';
+import { fetchWeather, fetchWeatherByCoords, getAuthToken, removeAuthToken, TOKEN_STORAGE_KEY } from './services/api';
 
 const THEME_STYLES: Record<WeatherCondition, ThemeConfig> = {
   ION_SUPERCELL: {
@@ -37,7 +38,7 @@ const THEME_STYLES: Record<WeatherCondition, ThemeConfig> = {
 export const App: React.FC = () => {
   const { t, i18n } = useTranslation();
 
-  // ── Authentication & Guest State ──────────────────────────────────────────
+  // Authentication & Guest State
   const [user, setUser] = useState<User | null>(() => {
     const token = getAuthToken();
     return token
@@ -47,103 +48,150 @@ export const App: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authTriggerReason, setAuthTriggerReason] = useState<'LIMIT_EXCEEDED' | 'MANUAL'>('LIMIT_EXCEEDED');
 
-  // ── Meteorological State ──────────────────────────────────────────────────
+  // Meteorological State (fallback initializes from most recent searched city or New Delhi)
   const [station, setStation] = useState<WeatherStation | null>(null);
-  const [currentQuery, setCurrentQuery] = useState<string>('tokyo');
+  const [currentQuery, setCurrentQuery] = useState<string>(() => getMostRecentSearch() || 'New Delhi');
+  const [activeCoords, setActiveCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [isCelsius, setIsCelsius] = useState<boolean>(true);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isColdStarting, setIsColdStarting] = useState<boolean>(false);
 
-  // ── Redis Cache Telemetry ─────────────────────────────────────────────────
+  // Geolocation State
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'granted' | 'denied' | 'unsupported'>('idle');
+  const [geoPillDismissed, setGeoPillDismissed] = useState<boolean>(false);
+  const geoResolvedRef = useRef<boolean>(false);
+
+  // Redis Cache Telemetry
   const [cacheLatencyMs, setCacheLatencyMs] = useState<number>(12);
   const [isCachePurging, setIsCachePurging] = useState<boolean>(false);
   const [cacheHits, setCacheHits] = useState<number>(99.84);
 
-  // ── Guest Search Limit Hook (The 3-Attempt Rule) ──────────────────────────
+  // Guest Search Limit Hook (3-Attempt Rule)
   const {
     searchesUsed,
     searchesRemaining,
     maxLimit,
-    hasExceededLimit,
     recordSearch,
     resetSearches,
   } = useSearchLimit(3);
 
-  // ── REQUIREMENT 2: OAuth 2.0 Token Auto-Capture ───────────────────────────
-  // When Spring Boot redirects back after Google OAuth with ?token=JWT,
-  // capture the token, authenticate the session, and clean the URL bar.
+  // OAuth 2.0 Token Auto-Capture & Session Restoration
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const oauthToken = params.get('token');
-  const oauthUsername = params.get('username') || params.get('name');
+    const params = new URLSearchParams(window.location.search);
+    const oauthToken = params.get('token');
+    const oauthUsername = params.get('username') || params.get('name');
 
-  // Case 1: Redirected from Google OAuth callback
-  if (oauthToken) {
-    const cleanToken = oauthToken.replace(/^["'\s]+|["'\s]+$/g, '');
-    
-    if (cleanToken) {
-      // 1. Save Token to LocalStorage
-      localStorage.setItem(TOKEN_STORAGE_KEY, cleanToken);
+    if (oauthToken) {
+      const cleanToken = oauthToken.replace(/^["'\s]+|["'\s]+$/g, '');
+      if (cleanToken) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, cleanToken);
+        const displayUsername = oauthUsername
+          ? decodeURIComponent(oauthUsername).toUpperCase()
+          : 'GOOGLE USER';
 
-      // 2. Extract dynamic Google Operator name (Fallback to 'GOOGLE OPERATOR')
-      const displayUsername = oauthUsername 
-        ? decodeURIComponent(oauthUsername).toUpperCase() 
-        : 'GOOGLE OPERATOR';
+        setUser({
+          id: 'google_op_' + Math.random().toString(36).substring(2, 7),
+          username: displayUsername,
+          name: displayUsername,
+          tier: 'PRO_OPERATOR',
+          token: cleanToken,
+          searchesUnlimited: true,
+        });
 
-      setUser({
-        id: 'google_op_' + Math.random().toString(36).substring(2, 7),
-        username: displayUsername,
-        name: displayUsername,
-        tier: 'PRO_OPERATOR',
-        token: cleanToken,
-        searchesUnlimited: true,
-      });
-
-      // 3. Remove ?token= and ?username= from URL bar without page reload
-      const cleanUrl = window.location.pathname + window.location.hash;
-      window.history.replaceState({}, document.title, cleanUrl);
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    } else {
+      const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (savedToken) {
+        const cleanSavedToken = savedToken.replace(/^["'\s]+|["'\s]+$/g, '');
+        setUser({
+          id: 'restored_op',
+          username: 'PRO ACCOUNT',
+          name: 'PRO ACCOUNT',
+          tier: 'PRO_OPERATOR',
+          token: cleanSavedToken,
+          searchesUnlimited: true,
+        });
+      }
     }
-  } 
-  // Case 2: Page Refresh (Restore existing logged-in session from LocalStorage)
-  else {
-    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (savedToken) {
-      const cleanSavedToken = savedToken.replace(/^["'\s]+|["'\s]+$/g, '');
-      setUser({
-        id: 'restored_op',
-        username: 'PRO OPERATOR',
-        name: 'PRO OPERATOR',
-        tier: 'PRO_OPERATOR',
-        token: cleanSavedToken,
-        searchesUnlimited: true,
-      });
-    }
-  }
-}, []);
+  }, []);
 
-  // ── Initial Weather Load (re-runs when language changes) ──────────────────
+  // Automatic Browser Geolocation Request on Mount
   useEffect(() => {
-    async function loadInitial() {
+    if (!navigator.geolocation) {
+      setGeoStatus('unsupported');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        geoResolvedRef.current = true;
+        setGeoStatus('granted');
+        const { latitude, longitude } = pos.coords;
+        setActiveCoords({ lat: latitude, lon: longitude });
+
+        const lang = i18n.language || 'en';
+        const coldTimer = setTimeout(() => setIsColdStarting(true), 4000);
+        try {
+          const res = await fetchWeatherByCoords(latitude, longitude, lang);
+          clearTimeout(coldTimer);
+          setIsColdStarting(false);
+          if (res.success && res.data) {
+            setStation(res.data);
+            setCurrentQuery(res.data.city);
+            if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
+          }
+        } catch {
+          clearTimeout(coldTimer);
+          setIsColdStarting(false);
+        }
+      },
+      () => {
+        setGeoStatus('denied');
+      },
+      { timeout: 8000, maximumAge: 300000 }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Initial / Language-reactive Weather Fetch
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWeather() {
       const lang = i18n.language || 'en';
       const coldStartTimer = setTimeout(() => setIsColdStarting(true), 4000);
 
-      const res = await fetchWeather(currentQuery, lang);
+      const res = activeCoords
+        ? await fetchWeatherByCoords(activeCoords.lat, activeCoords.lon, lang)
+        : await fetchWeather(currentQuery, lang);
+
       clearTimeout(coldStartTimer);
       setIsColdStarting(false);
+
+      if (cancelled) return;
+
+      // Avoid overwriting coordinates result if initial mount fallback resolved later
+      if (!activeCoords && geoResolvedRef.current && !station) return;
 
       if (res.success && res.data) {
         setStation(res.data);
         if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
       }
     }
-    loadInitial();
+
+    loadWeather();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language]);
 
   const currentThemeKey: WeatherCondition = station?.theme || 'ION_SUPERCELL';
   const theme: ThemeConfig = THEME_STYLES[currentThemeKey] || THEME_STYLES.ION_SUPERCELL;
 
-  // ── Anti-Gravity 3D Mouse Parallax Physics ────────────────────────────────
+  // Anti-Gravity 3D Mouse Parallax Physics
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const smoothMouseX = useSpring(mouseX, { stiffness: 45, damping: 25 });
@@ -154,53 +202,55 @@ export const App: React.FC = () => {
   const parallaxX = useTransform(smoothMouseX, [-0.5, 0.5], [-14, 14]);
   const parallaxY = useTransform(smoothMouseY, [-0.5, 0.5], [-14, 14]);
 
-  // REQUIREMENT 3: Disable 3D parallax on mobile (< 768px)
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (window.innerWidth < 768) {
       mouseX.set(0);
       mouseY.set(0);
       return;
     }
-    const { clientX, clientY } = e;
-    mouseX.set(clientX / window.innerWidth - 0.5);
-    mouseY.set(clientY / window.innerHeight - 0.5);
+    mouseX.set(e.clientX / window.innerWidth - 0.5);
+    mouseY.set(e.clientY / window.innerHeight - 0.5);
   };
 
-  // ── Search Execution Handler ───────────────────────────────────────────────
-  const handleExecuteSearch = useCallback(async (query: string) => {
-    const isAllowed = recordSearch(Boolean(user));
+  // Search Handler with 3-Attempt Rule
+  const handleExecuteSearch = useCallback(
+    async (query: string) => {
+      const isAllowed = recordSearch(Boolean(user));
 
-    if (!isAllowed) {
-      setAuthTriggerReason('LIMIT_EXCEEDED');
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    setIsSearching(true);
-    setCurrentQuery(query);
-
-    const coldTimer = setTimeout(() => setIsColdStarting(true), 4000);
-
-    try {
-      const lang = i18n.language || 'en';
-      const res = await fetchWeather(query, lang);
-      clearTimeout(coldTimer);
-      setIsColdStarting(false);
-
-      if (res.success && res.data) {
-        setStation(res.data);
-        if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
+      if (!isAllowed) {
+        setAuthTriggerReason('LIMIT_EXCEEDED');
+        setIsAuthModalOpen(true);
+        return;
       }
-    } catch (err) {
-      console.error('Atmospheric query fault:', err);
-    } finally {
-      clearTimeout(coldTimer);
-      setIsColdStarting(false);
-      setIsSearching(false);
-    }
-  }, [user, recordSearch, i18n.language]);
 
-  const handleSelectStation = (key: string) => handleExecuteSearch(key);
+      setIsSearching(true);
+      setActiveCoords(null);
+      setCurrentQuery(query);
+
+      const coldTimer = setTimeout(() => setIsColdStarting(true), 4000);
+
+      try {
+        const lang = i18n.language || 'en';
+        const res = await fetchWeather(query, lang);
+        clearTimeout(coldTimer);
+        setIsColdStarting(false);
+
+        if (res.success && res.data) {
+          setStation(res.data);
+          if (res.cache) setCacheLatencyMs(res.cache.latencyMs);
+        }
+      } catch (err) {
+        console.error('Weather query error:', err);
+      } finally {
+        clearTimeout(coldTimer);
+        setIsColdStarting(false);
+        setIsSearching(false);
+      }
+    },
+    [user, recordSearch, i18n.language]
+  );
+
+  const handleSelectStation = (city: string) => handleExecuteSearch(city);
 
   const handlePurgeCache = () => {
     if (isCachePurging) return;
@@ -210,7 +260,7 @@ export const App: React.FC = () => {
       setCacheLatencyMs(4);
       setCacheHits(99.98);
       setIsCachePurging(false);
-    }, 1100);
+    }, 900);
   };
 
   const handleAuthSuccess = (authenticatedUser: User) => {
@@ -222,12 +272,9 @@ export const App: React.FC = () => {
     setUser(null);
   };
 
-  // ── REQUIREMENT 4: Language Toggle — changes locale AND re-fetches weather ─
   const toggleLanguage = () => {
     const nextLang = i18n.language === 'hi' ? 'en' : 'hi';
     i18n.changeLanguage(nextLang);
-    // The useEffect above will fire because i18n.language changed,
-    // triggering a fresh fetchWeather(currentQuery, nextLang) automatically.
   };
 
   return (
@@ -236,7 +283,7 @@ export const App: React.FC = () => {
       className="relative min-h-screen w-full bg-[#030712] text-slate-100 overflow-x-hidden font-sans selection:bg-cyan-500/30 selection:text-cyan-200"
       style={{ perspective: '1400px' }}
     >
-      {/* Dynamic Atmospheric Canvas (Theme Adaptive) */}
+      {/* Dynamic Atmospheric Background */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <motion.div
           animate={{ scale: [1, 1.25, 1], x: [0, 60, -40, 0], y: [0, -50, 40, 0] }}
@@ -268,11 +315,47 @@ export const App: React.FC = () => {
         </svg>
       </div>
 
-      {/* Top Command Bar Header */}
+      {/* Non-Intrusive Floating Geolocation Permission Pill */}
+      <AnimatePresence>
+        {!geoPillDismissed && (geoStatus === 'denied' || geoStatus === 'unsupported') && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-5 left-4 z-40 flex items-center gap-2.5 px-3.5 py-2 rounded-2xl abyssal-glass shadow-abyssal font-mono text-[10px] text-slate-300"
+          >
+            <svg
+              className={`w-3.5 h-3.5 flex-shrink-0 ${geoStatus === 'denied' ? 'text-amber-400' : 'text-slate-400'}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" />
+              <circle cx="12" cy="11" r="2.5" />
+              <line x1="2" y1="2" x2="22" y2="22" />
+            </svg>
+            <span>
+              {geoStatus === 'denied' ? t('header.geoDenied') : t('header.geoUnsupported')}
+            </span>
+            <button
+              type="button"
+              onClick={() => setGeoPillDismissed(true)}
+              className="ml-1 text-slate-500 hover:text-white transition-colors"
+              aria-label="Dismiss location notice"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Top Command Header */}
       <header className="relative z-30 w-full px-4 sm:px-8 md:px-12 pt-6 pb-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-
-          {/* Brand Designation */}
+          {/* Brand */}
           <div className="flex items-center gap-4">
             <motion.div
               whileHover={{ rotate: 180, scale: 1.05 }}
@@ -289,7 +372,7 @@ export const App: React.FC = () => {
                 <span className="font-display font-black tracking-widest text-lg bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400">
                   {t('brand.title')}
                 </span>
-                <span className="font-mono text-[9px] uppercase tracking-[0.25em] px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300">
+                <span className="font-mono text-[9px] uppercase tracking-[0.22em] px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300">
                   {t('brand.badge')}
                 </span>
               </div>
@@ -301,13 +384,13 @@ export const App: React.FC = () => {
 
           {/* Right Controls */}
           <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center">
-
-            {/* REQUIREMENT 4: Floating EN / HI glass toggle pill */}
+            {/* EN / HI Language Toggle */}
             <motion.button
+              type="button"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={toggleLanguage}
-              title="Toggle Regional Language (English / Hindi)"
+              title="Switch Language (English / Hindi)"
               className="px-3.5 py-1.5 rounded-2xl abyssal-glass text-slate-300 hover:text-white transition-all shadow-abyssal flex items-center gap-1.5 font-mono text-[11px]"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#00f2fe]" />
@@ -316,11 +399,11 @@ export const App: React.FC = () => {
               <span className={i18n.language === 'hi' ? 'text-cyan-400 font-bold' : 'opacity-40'}>HI</span>
             </motion.button>
 
-            {/* Redis Cache Indicator */}
+            {/* Redis Cache Latency Pill */}
             <motion.div
               whileHover={{ scale: 1.02 }}
               onClick={handlePurgeCache}
-              title="Click to trigger simulated Redis Edge cache purge"
+              title="Click to refresh Redis edge cache status"
               className="cursor-pointer group flex items-center gap-2.5 px-3 py-1.5 rounded-2xl abyssal-glass shadow-abyssal"
             >
               <div className="relative flex items-center justify-center">
@@ -340,7 +423,7 @@ export const App: React.FC = () => {
               </div>
             </motion.div>
 
-            {/* Units Toggle */}
+            {/* Unit Switcher */}
             <button
               type="button"
               onClick={() => setIsCelsius(!isCelsius)}
@@ -351,7 +434,7 @@ export const App: React.FC = () => {
               <span className={!isCelsius ? 'text-cyan-400 font-bold' : 'opacity-40'}>°F</span>
             </button>
 
-            {/* Operator Auth / Guest Indicator Pill */}
+            {/* Account Status / Sign In */}
             {user ? (
               <div className="flex items-center gap-2">
                 <div className="px-3.5 py-1.5 rounded-2xl abyssal-glass shadow-underglow-cyan flex items-center gap-2">
@@ -368,7 +451,6 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSignOut}
-                  title="Sign out to return to Guest mode"
                   className="p-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] text-slate-400 hover:text-white transition-all font-mono text-[10px]"
                 >
                   {t('header.disconnect')}
@@ -376,6 +458,7 @@ export const App: React.FC = () => {
               </div>
             ) : (
               <motion.button
+                type="button"
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => {
@@ -396,12 +479,11 @@ export const App: React.FC = () => {
               </motion.button>
             )}
 
-            {/* Reset Search Quota (dev helper) */}
             {!user && searchesUsed > 0 && (
               <button
                 type="button"
                 onClick={resetSearches}
-                title="Reset local guest search quota back to 3"
+                title="Reset guest search quota back to 3"
                 className="px-2 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-slate-500 hover:text-cyan-300 text-[9px] font-mono transition-all"
               >
                 {t('header.resetQuota')}
@@ -438,7 +520,7 @@ export const App: React.FC = () => {
             />
           ) : (
             <div className="py-24 text-center font-mono text-cyan-300 text-sm animate-pulse">
-              INITIALIZING QUANTUM ATMOSPHERIC MATRIX...
+              {t('hud.loading')}
             </div>
           )}
         </motion.div>

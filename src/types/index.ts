@@ -27,12 +27,13 @@ export interface HourlyForecast {
 }
 
 export interface DailyForecast {
-  date: string;      // "Mon", "Tue", etc.
+  date: string;      // "Mon", "Tue", "Yesterday", etc.
   highC: number;
   lowC: number;
-  pop: number;       // 0-100
+  pop: number;       // 0-100%
   iconType: 'sun' | 'rain' | 'cloud' | 'storm' | 'aurora' | 'snow';
   condition: string;
+  humidity?: number;
 }
 
 export interface WeatherStation {
@@ -61,7 +62,6 @@ export interface WeatherStation {
   pressureHpa: number;
   pressureTendency: string;
   forecast24h: HourlyForecast[];
-  // ── Extended fields ──────────────────────────────────────────────────────────
   dewPointC?: number;
   cloudCover?: number;
   aqi?: number | null;
@@ -69,7 +69,11 @@ export interface WeatherStation {
   aqiDominant?: string;
   sunrise?: string;
   sunset?: string;
+  sunriseUnix?: number;
+  sunsetUnix?: number;
+  timezoneOffsetSec?: number;
   forecast7d?: DailyForecast[];
+  history3d?: DailyForecast[];
 }
 
 export interface User {

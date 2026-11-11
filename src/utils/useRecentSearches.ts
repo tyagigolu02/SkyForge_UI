@@ -11,8 +11,12 @@ export interface RecentSearchesState {
 }
 
 function toTitleCase(city: string): string {
-  if (!city) return city;
-  return city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
+  return city
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function loadFromStorage(): string[] {
@@ -21,7 +25,7 @@ function loadFromStorage(): string[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
-      return parsed;
+      return parsed.slice(0, MAX_ENTRIES);
     }
     return [];
   } catch {
@@ -33,16 +37,31 @@ function saveToStorage(searches: string[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(searches));
   } catch {
-    // Silently fail if localStorage is unavailable (e.g., private browsing quota exceeded)
+    // Silently fail if localStorage is unavailable
   }
 }
 
+/**
+ * Synchronously reads the most recently searched city from localStorage.
+ * Used as a fallback initial station when geolocation is denied or unsupported.
+ */
+export function getMostRecentSearch(): string | null {
+  const list = loadFromStorage();
+  return list.length > 0 ? list[0] : null;
+}
+
+/**
+ * Custom Hook: useRecentSearches
+ * Stores up to 5 recent searched cities in localStorage, deduplicated with most recent first.
+ */
 export function useRecentSearches(): RecentSearchesState {
   const [recentSearches, setRecentSearches] = useState<string[]>(() => loadFromStorage());
 
   const addSearch = useCallback((city: string) => {
     if (!city || !city.trim()) return;
-    const normalized = toTitleCase(city.trim());
+    const normalized = toTitleCase(city);
+    if (!normalized) return;
+
     setRecentSearches((prev) => {
       const deduplicated = prev.filter(
         (entry) => entry.toLowerCase() !== normalized.toLowerCase()
