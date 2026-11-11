@@ -7,6 +7,7 @@
 import {
   WeatherStation,
   WeatherCondition,
+  DailyForecast,
   User,
   LoginPayload,
   RegisterPayload,
@@ -62,6 +63,51 @@ function deriveAtmosphericTheme(tempC: number, condition = ''): WeatherCondition
     return 'SOLAR_FLUX';
   }
   return 'ABYSSAL_AURORA';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: convert a unix timestamp (seconds) or "HH:MM" string to "HH:MM"
+// ─────────────────────────────────────────────────────────────────────────────
+
+function toHHMM(value: any): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'number') {
+    // Unix timestamp in seconds
+    const d = new Date(value * 1000);
+    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) {
+    return value.slice(0, 5);
+  }
+  return String(value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: derive AQI level label from numeric AQI
+// ─────────────────────────────────────────────────────────────────────────────
+
+function deriveAqiLevel(aqi: number | null | undefined): string | undefined {
+  if (aqi == null) return undefined;
+  if (aqi <= 50) return 'Good';
+  if (aqi <= 100) return 'Moderate';
+  if (aqi <= 150) return 'Unhealthy for Sensitive';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very Unhealthy';
+  return 'Hazardous';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility: determine iconType from a condition string
+// ─────────────────────────────────────────────────────────────────────────────
+
+function iconFromCondition(cond: string): DailyForecast['iconType'] {
+  const c = cond.toLowerCase();
+  if (c.includes('storm') || c.includes('thunder')) return 'storm';
+  if (c.includes('snow') || c.includes('ice') || c.includes('frost') || c.includes('cryo')) return 'snow';
+  if (c.includes('rain') || c.includes('drizzle') || c.includes('shower')) return 'rain';
+  if (c.includes('aurora')) return 'aurora';
+  if (c.includes('cloud') || c.includes('overcast') || c.includes('mist') || c.includes('fog')) return 'cloud';
+  return 'sun';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,6 +220,78 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     }));
   }
 
+  // ── Dew Point ─────────────────────────────────────────────────────────────
+  const dewPointC: number = data.dewPoint ?? data.dew_point ?? Math.round(tempC - ((100 - humidity) / 5));
+
+  // ── Cloud Cover ───────────────────────────────────────────────────────────
+  const cloudCover: number = data.cloudCover ?? data.clouds?.all ?? 50;
+
+  // ── Air Quality Index ─────────────────────────────────────────────────────
+  const aqi: number | null = data.aqi ?? data.airQualityIndex ?? null;
+  const aqiLevel: string | undefined = deriveAqiLevel(aqi);
+  const aqiDominant: string = data.dominantPollutant ?? data.aqiDominant ?? 'PM2.5';
+
+  // ── Sunrise / Sunset ──────────────────────────────────────────────────────
+  const sunrise: string | undefined = toHHMM(data.sunrise ?? data.sys?.sunrise);
+  const sunset: string | undefined = toHHMM(data.sunset ?? data.sys?.sunset);
+
+  // ── 7-day Forecast ────────────────────────────────────────────────────────
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  let forecast7d: DailyForecast[] = [];
+
+  const rawDaily: any[] | undefined =
+    Array.isArray(data.forecast7d) && data.forecast7d.length > 0 ? data.forecast7d
+    : Array.isArray(data.daily) && data.daily.length > 0 ? data.daily
+    : undefined;
+
+  if (rawDaily) {
+    forecast7d = rawDaily.slice(0, 7).map((d: any, i: number) => {
+      const rawDayHigh = d.high ?? d.highC ?? d.temp?.max ?? d.tempMax ?? d.temperature ?? tempC + 3;
+      const rawDayLow = d.low ?? d.lowC ?? d.temp?.min ?? d.tempMin ?? tempC - 3;
+      const dayHighC = Math.round(rawDayHigh > 100 ? rawDayHigh - 273.15 : Number(rawDayHigh));
+      const dayLowC = Math.round(rawDayLow > 100 ? rawDayLow - 273.15 : Number(rawDayLow));
+      const dayCondition = String(
+        d.condition ?? d.description ?? d.weather?.[0]?.description ?? d.weather?.[0]?.main ?? condition
+      ).toUpperCase();
+      const dayPop = Math.min(100, Math.max(0, Math.round(Number(d.pop ?? d.precipitation ?? d.precipProbability ?? 20))));
+      const dateLabel = d.date
+        ? (typeof d.date === 'number'
+            ? DAY_NAMES[new Date(d.date * 1000).getUTCDay()]
+            : (DAY_NAMES[new Date(String(d.date)).getDay()] ?? d.date))
+        : DAY_NAMES[(new Date().getDay() + i) % 7];
+      return {
+        date: dateLabel,
+        highC: dayHighC,
+        lowC: dayLowC,
+        pop: dayPop,
+        iconType: (d.iconType ?? iconFromCondition(dayCondition)) as DailyForecast['iconType'],
+        condition: dayCondition,
+      };
+    });
+  } else {
+    // Synthetic 7-day generation based on current conditions
+    const highOffsets = [0, 2, -1, 3, 1, -2, 4];
+    const lowOffsets  = [0, 1, -2, 2, -1, -3, 3];
+    const popBases    = [15, 20, 45, 10, 30, 60, 5];
+    for (let i = 0; i < 7; i++) {
+      const dayHighC = highC + highOffsets[i];
+      const dayLowC  = lowC  + lowOffsets[i];
+      const dayPop   = Math.min(100, Math.max(0, popBases[i] + (humidity - 50)));
+      const syntheticCond =
+        dayPop > 55 ? (dayHighC <= 0 ? 'SNOW' : 'RAIN')
+        : dayHighC >= 28 ? 'CLEAR SKY'
+        : 'PARTLY CLOUDY';
+      forecast7d.push({
+        date: DAY_NAMES[(new Date().getDay() + i) % 7],
+        highC: dayHighC,
+        lowC: dayLowC,
+        pop: dayPop,
+        iconType: iconFromCondition(syntheticCond),
+        condition: syntheticCond,
+      });
+    }
+  }
+
   return {
     id: city.toLowerCase().replace(/\s+/g, '-'),
     city,
@@ -200,6 +318,14 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     pressureHpa,
     pressureTendency,
     forecast24h,
+    dewPointC,
+    cloudCover,
+    aqi,
+    aqiLevel,
+    aqiDominant,
+    sunrise,
+    sunset,
+    forecast7d,
   };
 }
 
@@ -261,6 +387,82 @@ export async function fetchWeather(city = 'tokyo', lang = 'en'): Promise<ApiResp
     const fallbackStation = mapBackendToFrontend(
       { cityName: city.toUpperCase(), temperature: 22, condition: 'ATMOSPHERIC MATRIX // CACHED STREAM', humidity: 65 },
       city
+    );
+
+    return {
+      success: true,
+      isFallback: true,
+      error: error.name === 'AbortError' ? 'Cold start delay: Server waking up...' : error.message,
+      data: fallbackStation,
+      cache: { hit: false, latencyMs: elapsedMs, node: 'EDGE-SURFACE-ENCLAVE' },
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchWeatherByCoords — GET /api/weather/coords?lat={lat}&lon={lon}&lang={lang}
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchWeatherByCoords(
+  lat: number,
+  lon: number,
+  lang = 'en'
+): Promise<ApiResponse<WeatherStation>> {
+  const startTime = Date.now();
+  const token = getAuthToken();
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const endpoint = `${BASE_URL}/api/weather/coords?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&lang=${encodeURIComponent(lang)}`;
+  const coordLabel = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+
+  try {
+    // 25 s timeout — allows Render free-tier cold-start without hanging the UI
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const res = await fetch(endpoint, { method: 'GET', headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    const elapsedMs = Date.now() - startTime;
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(errText || `Coordinate atmospheric query failed (HTTP ${res.status})`);
+    }
+
+    const json = await res.json();
+    const station = mapBackendToFrontend(json, coordLabel);
+
+    return {
+      success: true,
+      data: station,
+      cache: {
+        hit: true,
+        latencyMs: Math.max(4, elapsedMs),
+        node: 'RENDER-EDGE // SPRING-BOOT',
+      },
+    };
+  } catch (error: any) {
+    const elapsedMs = Date.now() - startTime;
+    console.warn(`SkyForge Weather API coord query (${coordLabel}) encountered:`, error.message);
+
+    // Graceful fallback so the UI stays operational during cold-starts
+    const fallbackStation = mapBackendToFrontend(
+      {
+        lat,
+        lon,
+        temperature: 22,
+        condition: 'ATMOSPHERIC MATRIX // CACHED STREAM',
+        humidity: 65,
+      },
+      coordLabel
     );
 
     return {
@@ -414,6 +616,7 @@ export default {
   mapBackendToFrontend,
   normalizeBackendWeather,
   fetchWeather,
+  fetchWeatherByCoords,
   loginUser,
   registerUser,
   loginWithGoogle,

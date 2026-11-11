@@ -26,6 +26,15 @@ export interface HourlyForecast {
   iconType: 'sun' | 'rain' | 'cloud' | 'storm' | 'aurora' | 'snow';
 }
 
+export interface DailyForecast {
+  date: string;      // "Mon", "Tue", etc.
+  highC: number;
+  lowC: number;
+  pop: number;       // 0-100
+  iconType: 'sun' | 'rain' | 'cloud' | 'storm' | 'aurora' | 'snow';
+  condition: string;
+}
+
 export interface WeatherStation {
   id: string;
   city: string;
@@ -52,6 +61,15 @@ export interface WeatherStation {
   pressureHpa: number;
   pressureTendency: string;
   forecast24h: HourlyForecast[];
+  // ── Extended fields ──────────────────────────────────────────────────────────
+  dewPointC?: number;
+  cloudCover?: number;
+  aqi?: number | null;
+  aqiLevel?: string;
+  aqiDominant?: string;
+  sunrise?: string;
+  sunset?: string;
+  forecast7d?: DailyForecast[];
 }
 
 export interface User {
@@ -102,4 +120,3 @@ export interface SearchLimitState {
   recordSearch: (isAuthenticated?: boolean) => boolean;
   resetSearches: () => void;
 }
-
