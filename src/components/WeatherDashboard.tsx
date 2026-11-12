@@ -25,7 +25,7 @@ interface WeatherDashboardProps {
   cacheHits: number;
 }
 
-const POPULAR_HUBS = ['New Delhi', 'London', 'New York', 'Tokyo'];
+const POPULAR_HUBS = ['New Delhi', 'London', 'Mumbai', 'Tokyo'];
 
 export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
   station,
@@ -92,33 +92,7 @@ export const WeatherDashboard: React.FC<WeatherDashboardProps> = ({
               />
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-2 pr-1 sm:pr-2 pl-2 sm:pl-0">
-              <div
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[9px] sm:text-[10px] tracking-wider whitespace-nowrap transition-all ${
-                  isAuthenticated
-                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 shadow-[0_0_15px_rgba(0,255,194,0.2)]'
-                    : isQuotaExhausted
-                      ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30 animate-pulse'
-                      : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 shadow-[0_0_15px_rgba(0,242,254,0.2)]'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isAuthenticated
-                      ? 'bg-emerald-400 animate-pulse'
-                      : isQuotaExhausted
-                        ? 'bg-rose-400'
-                        : 'bg-cyan-400'
-                  }`}
-                />
-                <span>
-                  {isAuthenticated
-                    ? t('header.operatorPro')
-                    : isQuotaExhausted
-                      ? t('search.guestLimitLocked')
-                      : `${t('search.guestAccess')}: ${searchesRemaining}/${maxLimit} ${t('search.remaining')}`}
-                </span>
-              </div>
+            <div className="flex items-center justify-between sm:justify-end gap-2 pr-1 sm:pr-2 pl-2 sm:pl-0">             
 
               <motion.button
                 type="submit"

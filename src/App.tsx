@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { WeatherStation, WeatherCondition, ThemeConfig, User } from './types';
 import WeatherDashboard from './components/WeatherDashboard';
 import AuthScreen from './components/AuthScreen';
+import SkyForgeLogo from './components/SkyForgeLogo';
 import { useSearchLimit } from './utils/useSearchLimit';
 import { getMostRecentSearch } from './utils/useRecentSearches';
 import { fetchWeather, fetchWeatherByCoords, getAuthToken, removeAuthToken, TOKEN_STORAGE_KEY } from './services/api';
@@ -355,32 +356,14 @@ export const App: React.FC = () => {
       {/* Top Command Header */}
       <header className="relative z-30 w-full px-4 sm:px-8 md:px-12 pt-6 pb-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Brand */}
-          <div className="flex items-center gap-4">
-            <motion.div
-              whileHover={{ rotate: 180, scale: 1.05 }}
-              transition={{ duration: 0.6 }}
-              className="relative w-10 h-10 rounded-2xl flex items-center justify-center abyssal-glass shadow-abyssal"
-            >
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 blur-sm" />
-              <svg className="w-5 h-5 text-cyan-300 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </motion.div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-black tracking-widest text-lg bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400">
-                  {t('brand.title')}
-                </span>
-                <span className="font-mono text-[9px] uppercase tracking-[0.22em] px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300">
-                  {t('brand.badge')}
-                </span>
-              </div>
-              <p className="font-mono text-[10px] text-slate-400 tracking-wider">
-                {t('brand.subtitle')}
-              </p>
-            </div>
-          </div>
+          {/* Bespoke SkyForge Emblem & Brand Header */}
+          <SkyForgeLogo
+            size="md"
+            showText={true}
+            showBadge={true}
+            animated={true}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          />
 
           {/* Right Controls */}
           <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center">

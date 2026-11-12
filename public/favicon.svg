@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <radialGradient id="sf-bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#7928ca" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#030712" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="sf-wing-l" x1="14" y1="26" x2="48" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#00f2fe"/>
+      <stop offset="80%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="sf-wing-r" x1="86" y1="26" x2="52" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#38bdf8"/>
+      <stop offset="70%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="sf-bolt" x1="57" y1="14" x2="43" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="20%" stop-color="#a5f3fc"/>
+      <stop offset="55%" stop-color="#00f2fe"/>
+      <stop offset="85%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#7928ca"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded plate -->
+  <rect width="100" height="100" rx="26" fill="#030712"/>
+  <rect width="100" height="100" rx="26" fill="url(#sf-bg)"/>
+  <rect width="98" height="98" x="1" y="1" rx="25" stroke="#00f2fe" stroke-opacity="0.3" stroke-width="1.5"/>
+
+  <!-- Radar Isobar Orbit -->
+  <circle cx="50" cy="50" r="38" stroke="#00f2fe" stroke-width="1.2" stroke-opacity="0.45" stroke-dasharray="3 4"/>
+  <circle cx="50" cy="12" r="2.5" fill="#00f2fe"/>
+
+  <!-- Left Wing -->
+  <path d="M 47 26 C 35 27, 23 33, 14 43 C 22 47, 32 45, 40 51 C 44 54, 46 59, 47 65 C 47 51, 46 37, 47 26 Z" fill="url(#sf-wing-l)" opacity="0.95"/>
+  <!-- Right Wing -->
+  <path d="M 53 26 C 65 27, 77 33, 86 43 C 78 47, 68 45, 60 51 C 56 54, 54 59, 53 65 C 53 51, 54 37, 53 26 Z" fill="url(#sf-wing-r)" opacity="0.95"/>
+
+  <!-- Titanium Anvil Crown -->
+  <path d="M 28 22 C 38 18, 62 18, 72 22 L 67 27 C 58 25, 42 25, 33 27 Z" fill="#ffffff" opacity="0.9"/>
+
+  <!-- Kinetic Lightning Bolt -->
+  <path d="M 55 14 L 38 44 L 49 44 L 43 82 L 62 48 L 51 48 L 57 14 Z" fill="url(#sf-bolt)"/>
+  <path d="M 55 14 L 43 44 L 49 44 L 43 82 L 49 52 L 51 48 L 57 14 Z" fill="#ffffff" opacity="0.5"/>
+
+  <!-- Quantum Singularity Spark -->
+  <circle cx="49" cy="46" r="3" fill="#ffffff"/>
+  <path d="M 49 37 L 51 44.5 L 58 46 L 51 47.5 L 49 55 L 47 47.5 L 40 46 L 47 44.5 Z" fill="#ffffff"/>
+</svg>
+

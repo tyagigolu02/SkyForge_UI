@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { User } from '../types';
 import { loginUser, registerUser, loginWithGoogle } from '../services/api';
+import SkyForgeLogo from './SkyForgeLogo';
 
 interface AuthScreenProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl bg-black/65 overflow-y-auto">
-        
+
         {/* Backdrop dismiss */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -108,12 +109,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </svg>
           </button>
 
-          {/* Floating Quantum Singularity Core */}
-          <div className="relative mx-auto w-20 h-20 mb-5 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-600 blur-2xl opacity-60 animate-pulse" />
-            <div className="relative z-10 w-16 h-16 rounded-full abyssal-glass flex items-center justify-center shadow-underglow-cyan">
-              <span className="font-mono text-xl text-cyan-300">⚡</span>
-            </div>
+          {/* Floating SkyForge Emblem Portal */}
+          <div className="relative mx-auto mb-5 flex items-center justify-center">
+            <SkyForgeLogo size="lg" animated={true} />
           </div>
 
           {/* Header Typography */}
@@ -166,9 +164,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <button
               type="button"
               onClick={() => { setMode('login'); setErrorMsg(''); }}
-              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${
-                mode === 'login' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${mode === 'login' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               {mode === 'login' && (
                 <motion.div
@@ -183,9 +180,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <button
               type="button"
               onClick={() => { setMode('register'); setErrorMsg(''); }}
-              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${
-                mode === 'register' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${mode === 'register' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               {mode === 'register' && (
                 <motion.div
@@ -200,35 +196,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
           {/* Form with Glowing Inputs */}
           <form onSubmit={handleSubmit} className="relative z-10 space-y-4">
-            <div>
-              <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
-                {t('auth.username')}
-              </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="commander_01"
-                className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
-              />
-            </div>
 
             {mode === 'register' && (
               <div>
                 <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
-                  {t('auth.email')}
+                  {t('auth.username')}
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="operator@skyforge.net"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="your name"
                   className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
                 />
               </div>
             )}
+
+            <div>
+              <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                {t('auth.email')}
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="operator@gmail.com"
+                className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
+              />
+            </div>
+
 
             <div>
               <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
@@ -239,7 +237,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="abcd123"
                 className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
               />
             </div>
@@ -273,7 +271,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </form>
 
           <div className="mt-6 text-center font-mono text-[9px] text-slate-500 tracking-wider">
-            <span>TLS 1.3 // SPRING BOOT SECURE // JWT ENCLAVE</span>
+            <span>TLS 1.3 | SPRING BOOT SECURE | JWT ENCLAVE</span>
           </div>
 
         </motion.div>

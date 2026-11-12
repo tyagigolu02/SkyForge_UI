@@ -13,7 +13,7 @@ export const resources = {
         cacheActive: 'CACHE: ACTIVE',
         purging: 'REFRESHING CACHE...',
         redisEdge: 'REDIS EDGE · HIT',
-        operatorPro: 'PRO ACCOUNT // UNLIMITED',
+        operatorPro: 'UNLIMITED',
         signInOperator: 'SIGN IN',
         searchesLeft: 'SEARCHES LEFT',
         disconnect: 'SIGN OUT',
@@ -23,14 +23,14 @@ export const resources = {
         geoUnsupported: 'Geolocation unavailable · Showing fallback city',
       },
       search: {
-        placeholder: 'Search any city or location (e.g. New Delhi, London, Tokyo)...',
+        placeholder: 'Search any city or location (e.g. New Delhi)...',
         button: 'SEARCH',
         transmitting: 'LOADING...',
         guestAccess: 'GUEST',
-        guestLimitLocked: 'LIMIT: 0/3 (SIGN IN)',
+        guestLimitLocked: 'LIMIT: 0/3',
         remaining: 'LEFT',
         recentSearches: 'RECENT SEARCHES',
-        popularHubs: 'POPULAR HUBS',
+        popularHubs: 'POPULAR CITIES',
         clearAll: 'CLEAR',
       },
       hud: {
@@ -98,7 +98,7 @@ export const resources = {
       auth: {
         guestQuotaExhausted: 'GUEST SEARCH LIMIT REACHED (3/3)',
         operatorEnclave: 'ACCOUNT ACCESS',
-        unlockPremium: 'Unlock SkyForge Pro',
+        unlockPremium: 'SkyForge Unlimited Access',
         limitMessage:
           'You have used all 3 free guest searches. Sign in to unlock unlimited global city queries and priority caching.',
         operatorMessage:
@@ -119,7 +119,7 @@ export const resources = {
   hi: {
     translation: {
       brand: {
-        title: 'स्काईफोर्ज',
+        title: 'SKYFORGE',
         badge: 'लाइव मौसम',
         subtitle: 'स्थानिक मौसम विज्ञान मंच',
       },
@@ -127,7 +127,7 @@ export const resources = {
         cacheActive: 'कैश: सक्रिय',
         purging: 'कैश अपडेट हो रहा है...',
         redisEdge: 'रेडिस एज · हिट',
-        operatorPro: 'प्रो खाता // असीमित',
+        operatorPro: 'असीमित',
         signInOperator: 'साइन इन',
         searchesLeft: 'खोजें शेष',
         disconnect: 'साइन आउट',
@@ -137,11 +137,11 @@ export const resources = {
         geoUnsupported: 'जियोलोकेशन उपलब्ध नहीं · डिफ़ॉल्ट शहर सक्रिय',
       },
       search: {
-        placeholder: 'कोई भी शहर या स्थान खोजें (उदा. नई दिल्ली, मुंबई, टोक्यो)...',
+        placeholder: 'कोई भी शहर या स्थान खोजें (उदा. नई दिल्ली)...',
         button: 'खोजें',
         transmitting: 'लोड हो रहा है...',
         guestAccess: 'अतिथि',
-        guestLimitLocked: 'सीमा: 0/3 (साइन इन)',
+        guestLimitLocked: 'सीमा: 0/3',
         remaining: 'शेष',
         recentSearches: 'हाल की खोजें',
         popularHubs: 'लोकप्रिय शहर',
@@ -212,7 +212,7 @@ export const resources = {
       auth: {
         guestQuotaExhausted: 'अतिथि खोज सीमा समाप्त (3/3)',
         operatorEnclave: 'खाता लॉगिन',
-        unlockPremium: 'स्काईफोर्ज प्रो अनलॉक करें',
+        unlockPremium: 'SKYFORGE अनलॉक करें',
         limitMessage:
           'आपकी 3 मुफ्त अतिथि खोजें समाप्त हो चुकी हैं। असीमित खोजों के लिए साइन इन करें।',
         operatorMessage:
