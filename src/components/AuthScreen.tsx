@@ -12,11 +12,6 @@ interface AuthScreenProps {
   triggerReason?: 'LIMIT_EXCEEDED' | 'MANUAL';
 }
 
-/**
- * AuthScreen Component
- * Floating, borderless frosted glass modal adhering strictly to the "Abyssal Glass / Anti-Gravity" theme.
- * Features glowing inputs, Google quantum OAuth, and operator tier activation for guest limits.
- */
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   isOpen,
   onClose,
@@ -39,16 +34,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setIsLoading(true);
 
     try {
-      let res;
+      const cleanUsername = username.trim();
       if (mode === 'login') {
-        res = await loginUser({ username, password });
+        const res = await loginUser({ username: cleanUsername, password });
+        if (res.success && res.data) {
+          onAuthSuccess(res.data);
+          onClose();
+        }
       } else {
-        res = await registerUser({ username, email, password });
-      }
-
-      if (res.success && res.data) {
-        onAuthSuccess(res.data);
-        onClose();
+        await registerUser({ username: cleanUsername, email: email.trim(), password });
+        // Auto-login immediately after registration so JWT token is stored in localStorage
+        const loginRes = await loginUser({ username: cleanUsername, password });
+        if (loginRes.success && loginRes.data) {
+          onAuthSuccess(loginRes.data);
+          onClose();
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Authentication handshake interrupted.');
@@ -57,16 +57,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
-  const handleGoogleSignIn = () => {
-    const backendOAuthUrl = 'https://weather-api-4cv9.onrender.com/oauth2/authorization/google';
-    window.location.href = backendOAuthUrl;
-  };
+  const inputClass =
+    'w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]';
 
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 backdrop-blur-2xl bg-black/65 overflow-y-auto">
-
-        {/* Backdrop dismiss */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -75,7 +71,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           className="fixed inset-0 cursor-pointer"
         />
 
-        {/* The Floating Abyssal Glass Modal */}
         <motion.div
           initial={{ scale: 0.9, y: 35, opacity: 0 }}
           animate={{ scale: 1, y: 0, opacity: 1 }}
@@ -97,7 +92,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             />
           </div>
 
-          {/* Close Pill Button */}
           <button
             type="button"
             onClick={onClose}
@@ -109,35 +103,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </svg>
           </button>
 
-          {/* Floating SkyForge Emblem Portal */}
           <div className="relative mx-auto mb-5 flex items-center justify-center">
             <SkyForgeLogo size="lg" animated={true} />
           </div>
 
-          {/* Header Typography */}
           <div className="text-center relative z-10 mb-6">
             <span className="font-mono text-[9px] uppercase tracking-[0.3em] px-3 py-1 rounded-full bg-cyan-400/10 text-cyan-300 border border-cyan-400/20 inline-block mb-3">
               {triggerReason === 'LIMIT_EXCEEDED' ? t('auth.guestQuotaExhausted') : t('auth.operatorEnclave')}
             </span>
-
             <h2 className="font-display font-light text-2xl sm:text-3xl tracking-[0.18em] text-white uppercase">
               {t('auth.unlockPremium')}
             </h2>
-
             <p className="font-mono text-xs text-slate-400 mt-2 max-w-sm mx-auto leading-relaxed">
-              {triggerReason === 'LIMIT_EXCEEDED'
-                ? t('auth.limitMessage')
-                : t('auth.operatorMessage')}
+              {triggerReason === 'LIMIT_EXCEEDED' ? t('auth.limitMessage') : t('auth.operatorMessage')}
             </p>
           </div>
 
-          {/* Sign In with Google Button */}
+          {/* Google OAuth Button (Uses Dynamic BASE_URL via loginWithGoogle) */}
           <div className="relative z-10 mb-6">
             <motion.button
               type="button"
               whileHover={{ scale: 1.02, boxShadow: '0 0 35px rgba(0, 242, 254, 0.4)' }}
               whileTap={{ scale: 0.98 }}
-              onClick={handleGoogleSignIn}
+              onClick={loginWithGoogle}
               disabled={isLoading}
               className="w-full py-3.5 px-5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.1] text-white font-mono text-xs tracking-[0.18em] uppercase shadow-underglow-cyan flex items-center justify-center gap-3 transition-all border border-white/10"
             >
@@ -153,80 +141,66 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
           <div className="relative z-10 flex items-center gap-3 my-5">
             <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-            <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-500">
-              {t('auth.orEmail')}
-            </span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-slate-500">{t('auth.orEmail')}</span>
             <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           </div>
 
           {/* Mode Switch Tabs */}
           <div className="relative z-10 flex p-1 rounded-2xl bg-white/[0.03] mb-5">
-            <button
-              type="button"
-              onClick={() => { setMode('login'); setErrorMsg(''); }}
-              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${mode === 'login' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
+            {(['login', 'register'] as const).map((tabMode) => (
+              <button
+                key={tabMode}
+                type="button"
+                onClick={() => { setMode(tabMode); setErrorMsg(''); }}
+                className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${
+                  mode === tabMode ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
                 }`}
-            >
-              {mode === 'login' && (
-                <motion.div
-                  layoutId="auth-tab"
-                  className="absolute inset-0 rounded-xl bg-white/[0.08] shadow-[0_0_15px_rgba(0,242,254,0.3)] backdrop-blur-md"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-              <span className="relative z-10">{t('auth.operatorLogin')}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setMode('register'); setErrorMsg(''); }}
-              className={`flex-1 py-2 text-center font-mono text-[11px] tracking-wider transition-all rounded-xl relative ${mode === 'register' ? 'text-white font-medium' : 'text-slate-400 hover:text-slate-200'
-                }`}
-            >
-              {mode === 'register' && (
-                <motion.div
-                  layoutId="auth-tab"
-                  className="absolute inset-0 rounded-xl bg-white/[0.08] shadow-[0_0_15px_rgba(0,242,254,0.3)] backdrop-blur-md"
-                  transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                />
-              )}
-              <span className="relative z-10">{t('auth.createAccount')}</span>
-            </button>
+              >
+                {mode === tabMode && (
+                  <motion.div
+                    layoutId="auth-tab"
+                    className="absolute inset-0 rounded-xl bg-white/[0.08] shadow-[0_0_15px_rgba(0,242,254,0.3)] backdrop-blur-md"
+                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10">
+                  {tabMode === 'login' ? t('auth.operatorLogin') : t('auth.createAccount')}
+                </span>
+              </button>
+            ))}
           </div>
 
-          {/* Form with Glowing Inputs */}
+          {/* Form with Fixed Username + Email Logic */}
           <form onSubmit={handleSubmit} className="relative z-10 space-y-4">
+            <div>
+              <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                {t('auth.username')}
+              </label>
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="operator username"
+                className={inputClass}
+              />
+            </div>
 
             {mode === 'register' && (
               <div>
                 <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
-                  {t('auth.username')}
+                  {t('auth.email')}
                 </label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="your name"
-                  className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="operator@gmail.com"
+                  className={inputClass}
                 />
               </div>
             )}
-
-            <div>
-              <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
-                {t('auth.email')}
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="operator@gmail.com"
-                className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
-              />
-            </div>
-
 
             <div>
               <label className="block font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1.5">
@@ -237,8 +211,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="abcd123"
-                className="w-full px-4 py-3 rounded-2xl bg-white/[0.04] text-white placeholder-slate-600 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 focus:bg-white/[0.08] transition-all shadow-[inset_0_2px_8px_rgba(0,0,0,0.6)]"
+                placeholder="••••••••"
+                className={inputClass}
               />
             </div>
 
@@ -273,7 +247,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <div className="mt-6 text-center font-mono text-[9px] text-slate-500 tracking-wider">
             <span>TLS 1.3 | SPRING BOOT SECURE | JWT ENCLAVE</span>
           </div>
-
         </motion.div>
       </div>
     </AnimatePresence>
@@ -281,4 +254,3 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 };
 
 export default AuthScreen;
-
