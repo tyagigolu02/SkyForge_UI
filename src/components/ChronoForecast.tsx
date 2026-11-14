@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { WeatherStation, ThemeConfig, DailyForecast } from '../types';
-import { DayDetailModal, WeatherIcon, displayTemp } from './DayDetailModel';
+import { DayDetailModal, WeatherIcon, displayTemp } from './DayDetailModal';
 
 interface ChronoForecastProps {
   station: WeatherStation;
@@ -28,18 +28,19 @@ export const ChronoForecast: React.FC<ChronoForecastProps> = ({ station, theme, 
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: '24h', label: t('forecast.hourly', '24H STREAM') },
-    { key: '7day', label: '16-DAY OUTLOOK' },
-    { key: 'past', label: 'PAST 7 DAYS' },
+    { key: '7day', label: t('forecast.weekly', '16-DAY OUTLOOK') },
+    { key: 'past', label: t('forecast.past', 'PAST 7 DAYS') },
   ];
 
   const accent = theme.accentHex || '#00f2fe';
   const forecast16d: DailyForecast[] = station.forecast7d ?? [];
   const history7d: DailyForecast[] = station.history3d ?? [];
+  const activeDays = activeTab === '7day' ? forecast16d : history7d;
 
-  const temps = forecast16d.flatMap((d) => [d.lowC, d.highC]);
-  const weekMin = temps.length ? Math.min(...temps) : 10;
-  const weekMax = temps.length ? Math.max(...temps) : 35;
-  const weekRange = weekMax - weekMin || 1;
+  const allTemps = activeDays.flatMap((d) => [d.lowC, d.highC]);
+  const minTemp = allTemps.length ? Math.min(...allTemps) : 10;
+  const maxTemp = allTemps.length ? Math.max(...allTemps) : 35;
+  const tempRange = maxTemp - minTemp || 1;
 
   return (
     <div>
@@ -127,100 +128,72 @@ export const ChronoForecast: React.FC<ChronoForecastProps> = ({ station, theme, 
           </div>
         )}
 
-        {/* MODE 2: 16-DAY FUTURE FORECAST (Click any day for Full-Screen View) */}
-        {activeTab === '7day' && (
-          <div className="p-4 flex flex-col gap-2 max-h-[540px] overflow-y-auto">
-            {forecast16d.map((day, i) => {
-              const barStart = Math.round(((day.lowC - weekMin) / weekRange) * 100);
-              const barWidth = Math.max(10, Math.round(((day.highC - day.lowC) / weekRange) * 100));
+        {/* MODE 2 & 3: UNIFIED CARD GRID (16-Day = 4x4 Cards | Past 7-Day = 4 Cards + 3 Spread Cards) */}
+        {(activeTab === '7day' || activeTab === 'past') && (
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5">
+            {activeDays.map((day, i) => {
+              // Past 7 Days: Row 1 (first 4 cards) = col-span-3 (4 cards), Row 2 (last 3 cards) = col-span-4 (3 stretched cards!)
+              const isPastSecondRow = activeTab === 'past' && activeDays.length === 7 && i >= 4;
+              const colSpanClass = isPastSecondRow ? 'lg:col-span-4' : 'lg:col-span-3';
+
+              const barStart = Math.round(((day.lowC - minTemp) / tempRange) * 100);
+              const barWidth = Math.max(12, Math.round(((day.highC - day.lowC) / tempRange) * 100));
 
               return (
                 <motion.div
                   key={`${day.date}-${i}`}
                   onClick={() => setSelectedDayModal(day)}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.025 }}
-                  className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.05] hover:bg-cyan-400/[0.08] hover:border-cyan-400/30 cursor-pointer transition-all"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  whileHover={{ y: -4, scale: 1.01 }}
+                  className={`${colSpanClass} p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-cyan-400/[0.08] hover:border-cyan-400/35 cursor-pointer transition-all flex flex-col justify-between gap-3`}
                 >
-                  <div className="w-28 sm:w-36 flex-shrink-0">
-                    <span className="font-mono text-xs text-white font-semibold block">{day.date}</span>
-                    {day.fullDate && (
-                      <span className="font-mono text-[10px] text-slate-400 block truncate">{day.fullDate}</span>
-                    )}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-mono text-xs text-cyan-300 font-semibold block truncate">
+                        {day.date}
+                      </span>
+                      {day.fullDate && (
+                        <span className="font-mono text-[10px] text-slate-400 block truncate mt-0.5">
+                          {day.fullDate}
+                        </span>
+                      )}
+                    </div>
+                    <WeatherIcon type={day.iconType} className="w-7 h-7 flex-shrink-0" />
                   </div>
 
-                  <WeatherIcon type={day.iconType} className="w-6 h-6 flex-shrink-0" />
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-display font-light text-2xl text-white">
+                        {displayTemp(day.highC, isCelsius)}
+                      </span>
+                      <span className="font-mono text-xs text-slate-400">
+                        / {displayTemp(day.lowC, isCelsius)}
+                      </span>
+                    </div>
+                    <p className="font-mono text-[10px] text-slate-300 mt-1 truncate">{day.condition}</p>
 
-                  <span className="font-mono text-[10px] sm:text-xs text-slate-300 flex-1 truncate">
-                    {day.condition}
-                  </span>
-
-                  <div className="hidden sm:flex items-center gap-1 w-14 justify-end flex-shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                    <span className="font-mono text-[10px] text-cyan-300">{day.pop}%</span>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0 w-32 sm:w-44">
-                    <span className="font-mono text-[11px] text-slate-400 w-8 text-right">
-                      {displayTemp(day.lowC, isCelsius)}
-                    </span>
-                    <div className="relative flex-1 h-1.5 bg-white/[0.08] rounded-full overflow-hidden">
+                    {/* Thermal Range Bar */}
+                    <div className="relative w-full h-1.5 bg-white/[0.08] rounded-full overflow-hidden mt-2.5">
                       <div
                         className="absolute h-full rounded-full bg-gradient-to-r from-cyan-400 to-amber-400"
                         style={{ left: `${barStart}%`, width: `${barWidth}%` }}
                       />
                     </div>
-                    <span className="font-mono text-[11px] text-white font-semibold w-8">
-                      {displayTemp(day.highC, isCelsius)}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.06] font-mono text-[10px] text-slate-400">
+                    <span>
+                      {t('forecast.pop')}: <span className="text-cyan-300 font-semibold">{day.pop}%</span>
+                    </span>
+                    <span>
+                      RH: <span className="text-slate-200 font-semibold">{day.humidity ?? 55}%</span>
                     </span>
                   </div>
                 </motion.div>
               );
             })}
-          </div>
-        )}
-
-        {/* MODE 3: PAST 7 DAYS HISTORICAL TELEMETRY (Click any day for Full-Screen View) */}
-        {activeTab === 'past' && (
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {history7d.map((day, i) => (
-              <motion.div
-                key={`${day.date}-${i}`}
-                onClick={() => setSelectedDayModal(day)}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:bg-cyan-400/[0.08] hover:border-cyan-400/30 cursor-pointer transition-all flex flex-col justify-between gap-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="font-mono text-xs text-cyan-300 font-semibold block">{day.date}</span>
-                    {day.fullDate && (
-                      <span className="font-mono text-[10px] text-slate-400 block">{day.fullDate}</span>
-                    )}
-                  </div>
-                  <WeatherIcon type={day.iconType} className="w-7 h-7" />
-                </div>
-
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display font-light text-2xl text-white">
-                      {displayTemp(day.highC, isCelsius)}
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">
-                      / {displayTemp(day.lowC, isCelsius)}
-                    </span>
-                  </div>
-                  <p className="font-mono text-[10px] text-slate-300 mt-1 truncate">{day.condition}</p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2.5 border-t border-white/[0.06] font-mono text-[10px] text-slate-400">
-                  <span>Rain: <span className="text-cyan-300">{day.pop}%</span></span>
-                  <span>RH: <span className="text-slate-200">{day.humidity ?? 55}%</span></span>
-                </div>
-              </motion.div>
-            ))}
           </div>
         )}
 
