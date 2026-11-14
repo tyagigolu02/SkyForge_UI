@@ -2,6 +2,38 @@ import { WeatherStation, WeatherCondition, DailyForecast, HourlyForecast, AlertO
 
 const COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
+// Real Astronomical Lunar Cycle (29.53059 days) -> Returns "Waxing Crescent", etc.
+function computeRealMoonPhase(date = new Date()): { phase: string; illumination: number } {
+  const synodicMonth = 29.53058867;
+  const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14, 0);
+  const daysSince = (date.getTime() - knownNewMoon) / 86400000;
+  const cyclePos = ((daysSince % synodicMonth) + synodicMonth) % synodicMonth;
+  const frac = cyclePos / synodicMonth;
+  const illumination = Math.round((1 - Math.cos(frac * 2 * Math.PI)) * 50);
+
+  if (cyclePos < 1.84) return { phase: 'New Moon', illumination };
+  if (cyclePos < 5.53) return { phase: 'Waxing Crescent', illumination };
+  if (cyclePos < 9.22) return { phase: 'First Quarter', illumination };
+  if (cyclePos < 12.91) return { phase: 'Waxing Gibbous', illumination };
+  if (cyclePos < 16.61) return { phase: 'Full Moon', illumination };
+  if (cyclePos < 20.30) return { phase: 'Waning Gibbous', illumination };
+  if (cyclePos < 23.99) return { phase: 'Last Quarter', illumination };
+  if (cyclePos < 27.68) return { phase: 'Waning Crescent', illumination };
+  return { phase: 'New Moon', illumination };
+}
+
+function to12Hour(timeStr?: string, fallback = '06:42 AM'): string {
+  if (!timeStr) return fallback;
+  if (/AM|PM/i.test(timeStr)) return timeStr;
+  const m = timeStr.trim().match(/(\d{1,2}):(\d{2})/);
+  if (!m) return timeStr;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const mer = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${min} ${mer}`;
+}
+
 export function deriveAtmosphericTheme(tempC: number, condition = ''): WeatherCondition {
   const c = condition.toLowerCase();
   if (tempC <= 0 || /snow|ice|frost/.test(c)) return 'CRYO_CHASM';
@@ -16,7 +48,7 @@ export function iconFromCondition(cond = ''): DailyForecast['iconType'] {
   if (/snow|ice|frost/.test(c)) return 'snow';
   if (/rain|drizzle|shower/.test(c)) return 'rain';
   if (c.includes('aurora')) return 'aurora';
-  if (/cloud|overcast|mist|fog|haze/.test(c)) return 'cloud';
+  if (/overcast|fog|haze|mist|partly cloudy/.test(c)) return 'cloud';
   return 'sun';
 }
 
@@ -34,30 +66,8 @@ function formatDateLabel(dateStr: string | undefined, full = false): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function buildFallbackHours(baseTemp: number, baseCond: string, basePop = 15, baseWind = 12): HourlyForecast[] {
-  return Array.from({ length: 24 }, (_, h) => {
-    const t = baseTemp + Math.round(Math.sin(((h - 6) / 24) * Math.PI * 2) * 4);
-    const cond = h >= 6 && h <= 18 ? baseCond : baseCond.replace('SUNNY', 'CLEAR');
-    return {
-      time: `${String(h).padStart(2, '0')}:00`,
-      tempC: t,
-      feelsLikeC: t - 1,
-      pop: Math.min(100, Math.max(5, basePop + ((h * 3) % 20) - 8)),
-      precipMm: 0,
-      windKph: Math.round(baseWind + (h % 5) - 2),
-      windDir: 'NE',
-      humidity: 55 + (h % 15),
-      pressureHpa: 1013,
-      uvIndex: h >= 7 && h <= 17 ? Math.max(1, 7 - Math.abs(12 - h)) : 0,
-      visibilityKm: 10,
-      condition: cond,
-      iconType: iconFromCondition(cond),
-    };
-  });
-}
-
-function mapHours(rawHours: any[] | undefined, baseTemp: number, baseCond: string, baseWind = 12): HourlyForecast[] {
-  if (!Array.isArray(rawHours) || !rawHours.length) return buildFallbackHours(baseTemp, baseCond, 15, baseWind);
+function mapHours(rawHours: any[] | undefined, baseTemp: number, baseCond: string, baseWind = 10): HourlyForecast[] {
+  if (!Array.isArray(rawHours) || !rawHours.length) return [];
   return rawHours.map((h: any, i: number) => {
     const rawTime = String(h.time ?? '');
     const time = rawTime.includes(' ') ? rawTime.split(' ')[1] : rawTime.includes('T') ? rawTime.split('T')[1].slice(0, 5) : rawTime || `${String(i % 24).padStart(2, '0')}:00`;
@@ -67,14 +77,14 @@ function mapHours(rawHours: any[] | undefined, baseTemp: number, baseCond: strin
       rawTime,
       tempC: Math.round(Number(h.temp ?? h.tempC ?? baseTemp)),
       feelsLikeC: Math.round(Number(h.feelsLike ?? h.temp ?? baseTemp)),
-      pop: Math.min(100, Math.max(0, Math.round(Number(h.chanceOfRain ?? h.pop ?? 10)))),
+      pop: Math.min(100, Math.max(0, Math.round(Number(h.chanceOfRain ?? h.pop ?? 0)))),
       precipMm: Number(h.precipMm ?? 0),
-      windKph: Number(h.windKph ?? baseWind),
-      windDir: String(h.windDir ?? 'NE'),
-      humidity: Number(h.humidity ?? 55),
-      pressureHpa: Number(h.pressureMb ?? 1013),
-      uvIndex: Number(h.uv ?? 4),
-      visibilityKm: Number(h.visKm ?? 10),
+      windKph: Math.round(Number(h.windKph ?? baseWind)),
+      windDir: String(h.windDir ?? 'NNW'),
+      humidity: Math.round(Number(h.humidity ?? 65)),
+      pressureHpa: Math.round(Number(h.pressureMb ?? 1015)),
+      uvIndex: Number(Number(h.uv ?? 0).toFixed(1)),
+      visibilityKm: Number(h.visKm ?? 4),
       condition: cond,
       iconUrl: h.icon,
       iconType: iconFromCondition(cond),
@@ -88,7 +98,9 @@ function mapDailyList(rawList: any[] | undefined, baseTemp: number, baseCond: st
     const highC = Math.round(Number(d.maxTemp ?? d.highC ?? baseTemp + 3));
     const lowC = Math.round(Number(d.minTemp ?? d.lowC ?? baseTemp - 4));
     const cond = String(d.condition ?? baseCond).toUpperCase();
-    const pop = Math.min(100, Math.max(0, Math.round(Number(d.chanceOfRain ?? d.pop ?? 12))));
+    const pop = Math.min(100, Math.max(0, Math.round(Number(d.chanceOfRain ?? d.pop ?? 0))));
+    const dDate = d.date ? new Date(`${d.date}T12:00:00`) : new Date();
+    const lunar = computeRealMoonPhase(Number.isNaN(dDate.getTime()) ? new Date() : dDate);
     return {
       date: formatDateLabel(d.date, false) || String(d.date ?? ''),
       fullDate: formatDateLabel(d.date, true) || String(d.date ?? ''),
@@ -97,18 +109,18 @@ function mapDailyList(rawList: any[] | undefined, baseTemp: number, baseCond: st
       avgTempC: Math.round((highC + lowC) / 2),
       pop,
       totalPrecipMm: Number(d.totalPrecipMm ?? 0),
-      maxWindKph: Number(d.maxWindKph ?? baseWind),
-      uvIndex: Number(d.uv ?? 4),
+      maxWindKph: Math.round(Number(d.maxWindKph ?? baseWind)),
+      uvIndex: Number(Number(d.uv ?? 3).toFixed(1)),
       humidity: Math.round(Number(d.avgHumidity ?? d.humidity ?? baseHum)),
       iconUrl: d.icon,
       iconType: iconFromCondition(cond),
       condition: cond,
-      sunrise: d.sunrise ?? '06:20 AM',
-      sunset: d.sunset ?? '05:45 PM',
-      moonrise: d.moonrise ?? '06:45 PM',
-      moonset: d.moonset ?? '06:12 AM',
-      moonPhase: d.moonPhase ?? 'Waxing Gibbous',
-      moonIllumination: d.moonIllumination ?? 72,
+      sunrise: to12Hour(d.sunrise, '06:42 AM'),
+      sunset: to12Hour(d.sunset, '05:25 PM'),
+      moonrise: d.moonrise ?? '11:01 AM',
+      moonset: d.moonset ?? '09:19 PM',
+      moonPhase: d.moonPhase ?? lunar.phase,
+      moonIllumination: d.moonIllumination ?? lunar.illumination,
       hours: mapHours(d.hours, highC, cond, baseWind),
     };
   });
@@ -117,13 +129,13 @@ function mapDailyList(rawList: any[] | undefined, baseTemp: number, baseCond: st
 function buildLiveTelemetryMedia(city: string, tempC: number, cond: string, windSpeed: number, aqi: number, uv: number, hum: number) {
   const hazards: AlertOrMediaItem[] = [
     {
-      title: aqi > 100 ? `Air Quality Alert · AQI ${aqi}` : windSpeed > 20 ? `High Wind Advisory · ${windSpeed} km/h` : `Atmospheric Stability · ${city}`,
-      description: `Current surface winds at ${windSpeed} km/h with ${hum}% relative humidity, AQI ${aqi}, and ${cond.toLowerCase()} conditions in ${city}.`,
+      title: aqi > 100 ? `Air Quality Alert · AQI ${aqi} (Poor)` : `Atmospheric Stability · ${city}`,
+      description: `Deteriorating air quality over ${city} (US AQI ${aqi}) with ${hum}% relative humidity and ${windSpeed} km/h winds.`,
       source: 'SKYFORGE DOPPLER',
     },
     {
-      title: uv >= 6 ? `Solar UV Radiation Warning · Index ${uv}` : `Thermal & Barometric Watch · ${tempC}°C`,
-      description: `Thermal sensors report ${tempC}°C across ${city} sector with UV Index ${uv} and ${hum}% atmospheric moisture.`,
+      title: `Barometric & Thermal Watch · ${tempC}°C`,
+      description: `Surface sensors in ${city} report ${tempC}°C (${cond.toLowerCase()}) with ${hum}% moisture and peak UV Index ${uv}.`,
       source: 'METEOROLOGICAL CORE',
     },
   ];
@@ -147,7 +159,7 @@ function buildLiveTelemetryMedia(city: string, tempC: number, cond: string, wind
     },
     {
       title: `16-Day Climatic Trend & Agricultural Advisory for ${city}`,
-      description: `Extended range models indicate fluctuating diurnal temperatures and ${hum}% moisture levels across the ${city} metropolitan zone.`,
+      description: `Extended range models indicate cooling nocturnal temperatures and ${hum}% moisture levels across the ${city} region.`,
       source: 'CLIMATE DESK',
     },
   ];
@@ -156,7 +168,7 @@ function buildLiveTelemetryMedia(city: string, tempC: number, cond: string, wind
 
 export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
   const data = raw?.data ?? raw ?? {};
-  const tempC = Math.round(Number(data.temperature ?? data.temp ?? 24));
+  const tempC = Math.round(Number(data.temperature ?? data.temp ?? 23));
   const feelsLikeC = Math.round(Number(data.feelsLike ?? tempC));
   const today = Array.isArray(data.forecast) && data.forecast[0] ? data.forecast[0] : {};
   const highC = Math.round(Number(today.maxTemp ?? data.high ?? tempC + 4));
@@ -165,18 +177,19 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
   const city = String(data.city ?? data.cityName ?? (query || 'New Delhi')).toUpperCase();
   const region = String(data.region ?? '').trim();
   const country = String(data.country ?? '').trim();
-  const lat = Number(data.lat ?? 28.6139);
-  const lon = Number(data.lon ?? 77.209);
-  const condition = String(data.condition ?? 'CLEAR SKY').toUpperCase();
-  const humidity = Math.min(100, Math.max(0, Math.round(Number(data.humidity ?? 55))));
-  const windSpeed = Number(Number(data.windSpeed ?? 12).toFixed(1));
-  const windAngle = Math.round(Number(data.windDegree ?? 0)) % 360;
+  const lat = Number(data.lat ?? 29.1455);
+  const lon = Number(data.lon ?? 77.6143);
+  const condition = String(data.condition ?? 'MOSTLY CLEAR').toUpperCase();
+  const humidity = Math.min(100, Math.max(0, Math.round(Number(data.humidity ?? 70))));
+  const windSpeed = Number(Number(data.windSpeed ?? 5).toFixed(1));
+  const windAngle = Math.round(Number(data.windDegree ?? 340)) % 360;
   const computedDir = COMPASS_16[Math.round(windAngle / 22.5) % 16];
   const uvIndex = Number(Number(data.uvIndex ?? today.uv ?? 3).toFixed(1));
-  const visibilityKm = Number(Number(data.visibility ?? 12).toFixed(1));
-  const pressureHpa = Math.round(Number(data.pressure ?? 1013));
-  const aqi = Math.round(Number(data.aqi ?? 48));
+  const visibilityKm = Number(Number(data.visibility ?? 3).toFixed(1));
+  const pressureHpa = Math.round(Number(data.pressure ?? 1015));
+  const aqi = Math.round(Number(data.aqi ?? 168));
   const dewPointC = Math.round(Number(data.dewPoint ?? (tempC - (100 - humidity) / 5)));
+  const lunar = computeRealMoonPhase(new Date());
 
   const forecast7d = mapDailyList(data.forecast, tempC, condition, humidity, windSpeed).slice(0, 16);
   const rawHist = Array.isArray(data.history) && data.history.length ? [...data.history].slice(-7).reverse() : [];
@@ -207,34 +220,34 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     windSpeed,
     windDirection: data.windDirection || computedDir,
     windAngle,
-    gusts: Number(Number(data.windGust ?? windSpeed * 1.35).toFixed(1)),
+    gusts: Number(Number(data.windGust ?? windSpeed * 1.4).toFixed(1)),
     humidity,
-    vaporStatus: humidity > 78 ? 'High Humidity' : humidity > 40 ? 'Comfortable' : 'Dry Air',
+    vaporStatus: humidity > 70 ? 'Humid' : humidity > 40 ? 'Comfortable' : 'Dry Air',
     uvIndex,
     uvDescription: data.uvStatus ?? (uvIndex >= 8 ? 'Very High UV' : uvIndex >= 6 ? 'High UV' : uvIndex >= 3 ? 'Moderate UV' : 'Low UV'),
     visibilityKm,
-    visibilityStatus: data.visibilityStatus ?? (visibilityKm >= 10 ? 'Clear Visibility' : visibilityKm >= 5 ? 'Moderate Clarity' : 'Low Visibility'),
+    visibilityStatus: data.visibilityStatus ?? (visibilityKm >= 8 ? 'Clear Visibility' : visibilityKm >= 4 ? 'Moderate Clarity' : 'Haze / Mist'),
     pressureHpa,
-    pressureTendency: data.pressureTrend ?? (pressureHpa >= 1016 ? 'High · Steady' : pressureHpa <= 1007 ? 'Low · Falling' : 'Normal · Stable'),
+    pressureTendency: data.pressureTrend ?? (pressureHpa >= 1014 ? 'Rising Slowly' : pressureHpa <= 1007 ? 'Low · Falling' : 'Normal · Stable'),
     precipitationMm: Number(data.precipitationMm ?? 0),
     forecast24h,
     dewPointC,
-    cloudCover: Number(data.cloudCover ?? 20),
+    cloudCover: Number(data.cloudCover ?? 15),
     aqi,
-    aqiLevel: data.aqiStatus ?? (aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : aqi <= 150 ? 'Unhealthy (Sensitive)' : 'Unhealthy'),
+    aqiLevel: data.aqiStatus ?? (aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : aqi <= 150 ? 'Unhealthy (Sensitive)' : 'Poor'),
     aqiDominant: String(data.dominantPollutant ?? 'PM2.5'),
-    pm2_5: Math.round(Number(data.pm2_5 ?? aqi * 0.42)),
-    pm10: Math.round(Number(data.pm10 ?? aqi * 0.78)),
-    no2: Math.round(Number(data.no2 ?? 14)),
-    o3: Math.round(Number(data.o3 ?? 44)),
+    pm2_5: Math.round(Number(data.pm2_5 ?? 75)),
+    pm10: Math.round(Number(data.pm10 ?? 112)),
+    no2: Math.round(Number(data.no2 ?? 18)),
+    o3: Math.round(Number(data.o3 ?? 66)),
     so2: data.so2,
     co: data.co,
-    sunrise: data.sunrise ?? '06:20 AM',
-    sunset: data.sunset ?? '05:45 PM',
-    moonrise: data.moonrise ?? '06:45 PM',
-    moonset: data.moonset ?? '06:12 AM',
-    moonPhase: data.moonPhase ?? 'Waxing Gibbous',
-    moonIllumination: data.moonIllumination ?? 72,
+    sunrise: to12Hour(data.sunrise, '06:42 AM'),
+    sunset: to12Hour(data.sunset, '05:25 PM'),
+    moonrise: data.moonrise ?? '11:01 AM',
+    moonset: data.moonset ?? '09:19 PM',
+    moonPhase: data.moonPhase && data.moonPhase !== 'Waxing Gibbous' ? data.moonPhase : lunar.phase,
+    moonIllumination: data.moonIllumination ?? lunar.illumination,
     forecast7d,
     history3d,
     hazards: Array.isArray(data.hazards) && data.hazards.length > 0 ? data.hazards : fallbackMedia.hazards,
