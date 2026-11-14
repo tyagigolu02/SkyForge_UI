@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Sun, Activity, Calendar, Compass, Zap, PlaySquare } from 'lucide-react';
 import { WeatherStation, ThemeConfig } from '../types';
 import WeatherMediaSection from './WeatherMediaSection';
 
@@ -10,12 +11,12 @@ interface WeatherRadarSectionProps {
 type MapLayer = 'wind' | 'rain' | 'temp' | 'clouds';
 
 const NAV_ITEMS = [
-  { id: 'sec-overview', label: 'HUD Overview', short: 'HUD', icon: '☀' },
-  { id: 'sec-metrics', label: 'Bento Metrics', short: 'Metrics', icon: '◈' },
-  { id: 'sec-forecast', label: '16D Timeline', short: 'Timeline', icon: '◷' },
-  { id: 'sec-radar', label: 'Live Radar', short: 'Radar', icon: '⊕' },
-  { id: 'sec-hazards', label: 'Advisories', short: 'Alerts', icon: '⚡' },
-  { id: 'sec-media', label: 'Video & News', short: 'Media', icon: '▣' },
+  { id: 'sec-overview', label: 'HUD Overview', short: 'HUD', Icon: Sun },
+  { id: 'sec-metrics', label: 'Bento Metrics', short: 'Metrics', Icon: Activity },
+  { id: 'sec-forecast', label: '16D Timeline', short: 'Timeline', Icon: Calendar },
+  { id: 'sec-radar', label: 'Live Radar', short: 'Radar', Icon: Compass },
+  { id: 'sec-hazards', label: 'Advisories', short: 'Alerts', Icon: Zap },
+  { id: 'sec-media', label: 'Video & News', short: 'Media', Icon: PlaySquare },
 ];
 
 export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ station, theme }) => {
@@ -34,24 +35,26 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
 
   return (
     <>
-      {/* 1. DESKTOP SIDEBAR: Smoothly Expands & Reveals Label on Hover */}
-      <aside className="fixed left-3 top-1/2 -translate-y-1/2 z-40 hidden xl:flex flex-col gap-2 p-2 rounded-3xl abyssal-glass border border-white/10 shadow-abyssal">
-        {NAV_ITEMS.map((item) => {
-          const active = activeNav === item.id;
+      {/* 1. DESKTOP SIDEBAR: Perfectly Centered 44x44 Icon Buttons + Floating Hover Label */}
+      <aside className="fixed left-4 top-1/2 -translate-y-1/2 z-40 hidden xl:flex flex-col items-center gap-2.5 p-2 rounded-3xl abyssal-glass border border-white/10 shadow-abyssal">
+        {NAV_ITEMS.map(({ id, label, Icon }) => {
+          const active = activeNav === id;
           return (
             <button
-              key={item.id}
+              key={id}
               type="button"
-              onClick={() => scrollToSection(item.id)}
-              className={`group relative flex items-center gap-0 hover:gap-3 px-3.5 py-2.5 rounded-2xl font-mono text-xs uppercase tracking-wider transition-all duration-300 ${
+              onClick={() => scrollToSection(id)}
+              className={`group relative w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 ${
                 active
-                  ? 'bg-cyan-400/20 text-white border border-cyan-400/40 shadow-[0_0_15px_rgba(0,242,254,0.3)]'
+                  ? 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/45 shadow-[0_0_18px_rgba(0,242,254,0.35)]'
                   : 'text-slate-400 hover:text-white hover:bg-white/[0.08]'
               }`}
             >
-              <span className="text-base leading-none flex-shrink-0">{item.icon}</span>
-              <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 group-hover:max-w-[130px] group-hover:opacity-100 transition-all duration-300 text-[11px] font-semibold text-cyan-300">
-                {item.label}
+              <Icon className="w-5 h-5 stroke-[1.8] flex-shrink-0" />
+
+              {/* Floating Label Pill on Hover */}
+              <span className="pointer-events-none absolute left-14 px-3 py-1.5 rounded-xl abyssal-glass border border-cyan-400/35 font-mono text-[11px] font-semibold uppercase tracking-wider text-cyan-200 whitespace-nowrap opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 shadow-abyssal">
+                {label}
               </span>
             </button>
           );
@@ -60,21 +63,21 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
 
       {/* 2. MOBILE & TABLET BOTTOM NAVIGATION DOCK */}
       <nav className="xl:hidden fixed bottom-2.5 inset-x-3 z-40 p-1.5 rounded-2xl abyssal-glass border border-white/15 shadow-abyssal flex items-center justify-around gap-1">
-        {NAV_ITEMS.map((item) => {
-          const active = activeNav === item.id;
+        {NAV_ITEMS.map(({ id, short, Icon }) => {
+          const active = activeNav === id;
           return (
             <button
-              key={item.id}
+              key={id}
               type="button"
-              onClick={() => scrollToSection(item.id)}
-              className={`flex-1 py-1.5 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 font-mono transition-all ${
+              onClick={() => scrollToSection(id)}
+              className={`flex-1 py-1.5 px-1 rounded-xl flex flex-col items-center justify-center gap-1 font-mono transition-all ${
                 active
                   ? 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/35 shadow-[0_0_12px_rgba(0,242,254,0.25)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <span className="text-xs leading-none">{item.icon}</span>
-              <span className="text-[9px] tracking-tighter truncate max-w-full">{item.short}</span>
+              <Icon className="w-4 h-4 stroke-[1.8]" />
+              <span className="text-[9px] tracking-tighter truncate max-w-full">{short}</span>
             </button>
           );
         })}
@@ -119,7 +122,6 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
         </div>
       </section>
 
-      {/* 4. ALWAYS-VISIBLE ADVISORIES, VIDEO BRIEFINGS & LIVE NEWS */}
       <WeatherMediaSection station={station} theme={theme} />
     </>
   );
