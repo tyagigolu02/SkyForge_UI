@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { WeatherStation, ThemeConfig } from '../types';
@@ -7,25 +7,6 @@ interface FloatingMetricsProps {
   station: WeatherStation;
   theme: ThemeConfig;
   isCelsius?: boolean;
-}
-
-function parseMinutes(hhmm?: string): number | null {
-  if (!hhmm) return null;
-  const match = hhmm.trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-  if (!match) return null;
-  let hrs = parseInt(match[1], 10);
-  const mins = parseInt(match[2], 10);
-  const period = match[3]?.toUpperCase();
-  if (period === 'PM' && hrs < 12) hrs += 12;
-  if (period === 'AM' && hrs === 12) hrs = 0;
-  return hrs * 60 + mins;
-}
-
-function formatCountdown(diffMins: number): string {
-  const m = Math.max(0, Math.round(diffMins));
-  const hrs = Math.floor(m / 60);
-  const mins = m % 60;
-  return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
 }
 
 function getAqiBadgeClass(level?: string): string {
@@ -42,27 +23,6 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
   isCelsius = true,
 }) => {
   const { t } = useTranslation();
-
-  const solarArcData = useMemo(() => {
-    const riseMins = parseMinutes(station.sunrise) ?? 378;
-    const setMins = parseMinutes(station.sunset) ?? 1094;
-    const d = new Date();
-    const nowMins = d.getHours() * 60 + d.getMinutes();
-
-    const totalDaylight = Math.max(60, setMins - riseMins);
-    const isDaytime = nowMins >= riseMins && nowMins <= setMins;
-    const u = isDaytime ? Math.min(1, Math.max(0, (nowMins - riseMins) / totalDaylight)) : nowMins < riseMins ? 0 : 1;
-
-    const dotX = (1 - u) * (1 - u) * 10 + 2 * (1 - u) * u * 100 + u * u * 190;
-    const dotY = (1 - u) * (1 - u) * 38 + 2 * (1 - u) * u * -4 + u * u * 38;
-
-    const countdownLabel = isDaytime
-      ? `${t('metrics.sunsetIn')} ${formatCountdown(setMins - nowMins)}`
-      : `${t('metrics.sunriseIn')} ${formatCountdown(nowMins < riseMins ? riseMins - nowMins : 1440 - nowMins + riseMins)}`;
-
-    return { dotX, dotY, isDaytime, countdownLabel };
-  }, [station.sunrise, station.sunset, t]);
-
   if (!station) return null;
 
   const accent = theme.accentHex || '#00f2fe';
@@ -74,9 +34,9 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {/* 1. AIR QUALITY INDEX + POLLUTANTS */}
       <motion.div
-        animate={{ y: [-4, 4, -4] }}
+        animate={{ y: [-3, 3, -3] }}
         transition={{ duration: 7.2, repeat: Infinity, ease: 'easeInOut' }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -105,9 +65,9 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
 
       {/* 2. HUMIDITY & DEW POINT */}
       <motion.div
-        animate={{ y: [4, -4, 4] }}
+        animate={{ y: [3, -3, 3] }}
         transition={{ duration: 7.8, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between mb-3">
@@ -136,9 +96,9 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
 
       {/* 3. WIND VECTOR */}
       <motion.div
-        animate={{ y: [-4, 5, -4] }}
+        animate={{ y: [-3, 4, -3] }}
         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between mb-3">
@@ -164,9 +124,9 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
 
       {/* 4. UV INDEX */}
       <motion.div
-        animate={{ y: [4, -4, 4] }}
-        transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        animate={{ y: [3, -3, 3] }}
+        transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut', delay: 1.1 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between mb-3">
@@ -184,9 +144,9 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
 
       {/* 5. VISIBILITY & CLOUD COVER */}
       <motion.div
-        animate={{ y: [-3, 4, -3] }}
+        animate={{ y: [-3, 3, -3] }}
         transition={{ duration: 6.8, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between mb-2">
@@ -207,7 +167,7 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
       <motion.div
         animate={{ y: [3, -3, 3] }}
         transition={{ duration: 8.4, repeat: Infinity, ease: 'easeInOut', delay: 1.6 }}
-        whileHover={{ scale: 1.02, y: -6 }}
+        whileHover={{ scale: 1.02, y: -5 }}
         className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
       >
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -221,70 +181,6 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
         <p className="font-mono text-[10px] text-slate-400 mt-3 pt-2.5 border-t border-white/[0.06]">
           Precip Volume: <span className="text-cyan-300 font-semibold">{station.precipitationMm ?? 0} mm</span>
         </p>
-      </motion.div>
-
-      {/* 7. FEELS LIKE & THERMAL COMFORT (NEW CARD) */}
-      <motion.div
-        animate={{ y: [-3, 3, -3] }}
-        transition={{ duration: 7.4, repeat: Infinity, ease: 'easeInOut', delay: 1.8 }}
-        whileHover={{ scale: 1.02, y: -6 }}
-        className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">THERMAL COMFORT</span>
-          <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/[0.05] text-amber-300">FEELS LIKE</span>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="font-display font-light text-3xl text-white">{formatTemp(station.feelsLikeC)}{tempUnit}</span>
-          <span className="font-mono text-xs text-slate-400">vs {formatTemp(station.tempC)}{tempUnit} actual</span>
-        </div>
-        <p className="font-mono text-[10px] text-slate-400 mt-2.5">
-          {station.feelsLikeDescription || 'Apparent temperature factoring humidity & wind.'}
-        </p>
-      </motion.div>
-
-      {/* 8. LUNAR TELEMETRY: MOON PHASE, ILLUMINATION & RISE/SET (NEW CARD) */}
-      <motion.div
-        animate={{ y: [3, -4, 3] }}
-        transition={{ duration: 8.1, repeat: Infinity, ease: 'easeInOut', delay: 2.0 }}
-        whileHover={{ scale: 1.02, y: -6 }}
-        className={`p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">LUNAR TELEMETRY</span>
-          <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300">
-            {station.moonIllumination ?? 72}% ILLUMINATED
-          </span>
-        </div>
-        <p className="font-display font-light text-2xl text-white">{station.moonPhase ?? 'Waxing Gibbous'}</p>
-        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] font-mono text-[10px]">
-          <span className="text-slate-400">Moonrise: <span className="text-indigo-200">{station.moonrise ?? '06:45 PM'}</span></span>
-          <span className="text-slate-400">Moonset: <span className="text-indigo-200">{station.moonset ?? '06:12 AM'}</span></span>
-        </div>
-      </motion.div>
-
-      {/* 9. CELESTIAL CYCLES: SUNRISE & SUNSET ARC */}
-      <motion.div
-        animate={{ y: [-2, 3, -2] }}
-        transition={{ duration: 9.5, repeat: Infinity, ease: 'easeInOut', delay: 2.2 }}
-        whileHover={{ scale: 1.01, y: -4 }}
-        className={`sm:col-span-2 p-5 rounded-3xl abyssal-glass ${theme.underglow} relative overflow-hidden`}
-      >
-        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">{t('metrics.celestial')}</span>
-          <span className="font-mono text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20">
-            {solarArcData.countdownLabel}
-          </span>
-        </div>
-        <svg className="w-full h-12 mb-3" viewBox="0 0 200 44" fill="none">
-          <line x1="6" y1="38" x2="194" y2="38" stroke="rgba(255,255,255,0.08)" strokeDasharray="3 4" />
-          <path d="M10 38 Q 100 -4, 190 38" stroke="#fbbf24" strokeWidth="1.75" strokeLinecap="round" opacity="0.65" />
-          <circle cx={solarArcData.dotX} cy={solarArcData.dotY} r="4.2" fill={solarArcData.isDaytime ? '#fbbf24' : '#a78bfa'} />
-        </svg>
-        <div className="flex items-center justify-between font-mono text-xs">
-          <div><span className="text-amber-400/80 block text-[9px] uppercase">{t('metrics.sunrise')}</span><span className="font-display text-lg text-amber-100">{station.sunrise}</span></div>
-          <div><span className="text-purple-400/80 block text-[9px] uppercase text-right">{t('metrics.sunset')}</span><span className="font-display text-lg text-purple-100">{station.sunset}</span></div>
-        </div>
       </motion.div>
     </div>
   );

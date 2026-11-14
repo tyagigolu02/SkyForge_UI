@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { WeatherStation } from '../types';
 
@@ -6,27 +6,81 @@ interface AtmosphericBackgroundProps {
   station: WeatherStation;
 }
 
+function toMinutes(timeStr?: string): number | null {
+  if (!timeStr) return null;
+  const m = timeStr.trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const mer = m[3]?.toUpperCase();
+  if (mer === 'PM' && h < 12) h += 12;
+  if (mer === 'AM' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+// Calculates East (Left = 6vw) to West (Right = 94vw) position if current time is between rise & set
+function computeArcPosition(nowMins: number, riseMins: number | null, setMins: number | null) {
+  if (riseMins == null || setMins == null) return { visible: false, leftVw: 50, topVh: 15 };
+
+  let duration = setMins - riseMins;
+  let elapsed = nowMins - riseMins;
+
+  // Handle overnight cycle (e.g., Moon rises at 19:00 and sets at 06:30 next morning)
+  if (duration <= 0) {
+    duration += 1440;
+    if (nowMins < riseMins) elapsed = 1440 - riseMins + nowMins;
+  }
+
+  if (elapsed < 0 || elapsed > duration) {
+    return { visible: false, leftVw: 50, topVh: 50 };
+  }
+
+  const progress = Math.min(1, Math.max(0, elapsed / Math.max(1, duration)));
+  const leftVw = 6 + progress * 88; // 6vw (East) -> 94vw (West)
+  const topVh = 5 + Math.pow(progress - 0.5, 2) * 85; // High at zenith (5vh), low at horizons (26vh)
+  return { visible: true, leftVw, topVh };
+}
+
 export const AtmosphericBackground: React.FC<AtmosphericBackgroundProps> = ({ station }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const cond = (station.condition || '').toLowerCase();
-  const windKph = Math.max(2, Number(station.windSpeed ?? 12));
-  const cloudCover = station.cloudCover ?? (cond.includes('cloud') ? 65 : 20);
+  const windKph = Math.max(1, Number(station.windSpeed ?? 10));
+  const cloudCover = Math.min(100, Math.max(0, Number(station.cloudCover ?? 0)));
 
-  const isRain = /rain|drizzle|shower|storm|thunder/.test(cond);
+  const isRain = /rain|drizzle|shower|storm|thunder/.test(cond) || (station.precipitationMm ?? 0) > 0;
   const isStorm = /storm|thunder/.test(cond);
   const isSnow = /snow|ice|frost|blizzard/.test(cond) || station.tempC <= 0;
 
-  // Detect Night vs Day from station.localtime ("YYYY-MM-DD HH:mm") or system clock
-  const currentHour = (() => {
-    const match = String(station.localtime || '').match(/\s(\d{1,2}):/);
-    return match ? parseInt(match[1], 10) : new Date().getHours();
-  })();
-  const isNight = currentHour < 6 || currentHour >= 18;
-  const showSun = !isNight && !isStorm && cloudCover < 85;
+  // Real-time Astronomical Positions from Station Localtime & Rise/Set Telemetry
+  const celestial = useMemo(() => {
+    const localMatch = String(station.localtime || '').match(/(\d{1,2}):(\d{2})/);
+    const sysNow = new Date();
+    const nowMins = localMatch
+      ? parseInt(localMatch[1], 10) * 60 + parseInt(localMatch[2], 10)
+      : sysNow.getHours() * 60 + sysNow.getMinutes();
 
-  // Wind multiplier: Halki hawa (<10km/h) = slow (0.5x), Tej hawa (>25km/h) = fast (2.5x+)
-  const windSpeedMultiplier = Math.min(4.2, Math.max(0.45, windKph / 10));
+    const sunRise = toMinutes(station.sunrise);
+    const sunSet = toMinutes(station.sunset);
+    const moonRise = toMinutes(station.moonrise);
+    const moonSet = toMinutes(station.moonset);
+
+    const sun = computeArcPosition(nowMins, sunRise, sunSet);
+    // Moon is visible when between moonrise & moonset, or at night when sun is down
+    const moon =
+      moonRise != null && moonSet != null
+        ? computeArcPosition(nowMins, moonRise, moonSet)
+        : !sun.visible
+          ? computeArcPosition(nowMins, sunSet ?? 1080, sunRise ?? 360)
+          : { visible: false, leftVw: 50, topVh: 20 };
+
+    // Cloud occlusion: High cloudCover dims and blurs the Sun/Moon behind the clouds
+    const visibilityFactor = Math.max(0.1, 1 - (cloudCover / 100) * 0.85);
+
+    return { sun, moon, isNight: !sun.visible, visibilityFactor };
+  }, [station.localtime, station.sunrise, station.sunset, station.moonrise, station.moonset, cloudCover]);
+
+  const windFactor = Math.min(4.5, Math.max(0.3, windKph / 10));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,121 +92,85 @@ export const AtmosphericBackground: React.FC<AtmosphericBackgroundProps> = ({ st
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    const handleResize = () => {
+    const onResize = () => {
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
     };
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', onResize);
 
-    // 1. Volumetric Drifting Clouds (Count & opacity scale with cloudCover)
-    const numClouds = cloudCover >= 60 ? 12 : cloudCover >= 25 ? 7 : 3;
+    // Cloud count & density strictly driven by real `cloudCover` %
+    const numClouds = Math.round((cloudCover / 100) * 16);
     const clouds = Array.from({ length: numClouds }, (_, i) => ({
       x: Math.random() * width,
-      y: 40 + (i * (height * 0.45)) / numClouds,
-      radius: 55 + (i % 4) * 28,
-      baseSpeed: (0.35 + (i % 3) * 0.22) * windSpeedMultiplier,
-      alpha: cloudCover >= 60 ? 0.16 : 0.09,
+      y: 20 + (i * (height * 0.42)) / Math.max(1, numClouds),
+      r: 70 + (i % 4) * 35,
+      speed: (0.28 + (i % 3) * 0.18) * windFactor,
+      alpha: 0.12 + (cloudCover / 100) * 0.28,
     }));
 
-    // 2. Aerodynamic Wind Streaks (Speed & count scale with windKph)
-    const numWindLines = Math.min(35, Math.max(6, Math.round(windKph * 0.9)));
-    const windLines = Array.from({ length: numWindLines }, () => ({
+    const windLines = Array.from({ length: Math.min(32, Math.max(3, Math.round(windKph))) }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      length: 45 + windKph * 2.5,
-      speed: (2.2 + Math.random() * 2.5) * windSpeedMultiplier,
-      alpha: Math.min(0.28, 0.06 + windKph * 0.005),
+      len: 40 + windKph * 2.5,
+      speed: (1.8 + Math.random() * 2) * windFactor,
+      alpha: Math.min(0.25, 0.04 + windKph * 0.004),
     }));
 
-    // 3. Raindrops / Snowflakes
-    const numParticles = isRain ? (isStorm ? 140 : 85) : isSnow ? 65 : 0;
-    const particles = Array.from({ length: numParticles }, () => ({
+    const dropCount = isRain ? (isStorm ? 140 : 85) : isSnow ? 60 : 0;
+    const drops = Array.from({ length: dropCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vy: isRain ? (9 + Math.random() * 6) * Math.max(0.8, windSpeedMultiplier * 0.7) : 1.2 + Math.random() * 1.5,
-      vx: isRain ? windSpeedMultiplier * 2.4 : windSpeedMultiplier * 0.8,
-      size: isRain ? 14 + Math.random() * 12 : 2 + Math.random() * 2.5,
-    }));
-
-    // 4. Night Stars
-    const stars = Array.from({ length: isNight ? 60 : 0 }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * (height * 0.65),
-      r: 0.8 + Math.random() * 1.4,
-      phase: Math.random() * Math.PI * 2,
+      vy: isRain ? (9 + Math.random() * 5) * Math.max(0.8, windFactor * 0.7) : 1.2 + Math.random() * 1.4,
+      vx: isRain ? windFactor * 2.2 : windFactor * 0.7,
+      size: isRain ? 15 + Math.random() * 10 : 2 + Math.random() * 2,
     }));
 
     let tick = 0;
     const render = () => {
-      tick += 0.025;
+      tick += 0.02;
       ctx.clearRect(0, 0, width, height);
 
-      // Draw Twinkling Night Stars
-      if (isNight) {
-        stars.forEach((s) => {
-          const twinkle = 0.25 + 0.65 * Math.abs(Math.sin(tick + s.phase));
-          ctx.fillStyle = `rgba(226, 232, 240, ${twinkle})`;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      }
-
-      // Draw Multi-Puff Moving Clouds
+      // Clouds rendered on top of Sun/Moon so passing clouds physically occlude them!
       clouds.forEach((c) => {
-        c.x += c.baseSpeed;
-        if (c.x - c.radius * 3 > width) c.x = -c.radius * 3;
-
-        const grad = ctx.createRadialGradient(c.x, c.y, c.radius * 0.2, c.x, c.y, c.radius * 2.4);
-        grad.addColorStop(0, `rgba(186, 230, 253, ${c.alpha})`);
-        grad.addColorStop(0.5, `rgba(148, 163, 184, ${c.alpha * 0.6})`);
-        grad.addColorStop(1, 'rgba(15, 23, 42, 0)');
-
-        ctx.fillStyle = grad;
+        c.x += c.speed;
+        if (c.x - c.r * 3 > width) c.x = -c.r * 3;
+        const g = ctx.createRadialGradient(c.x, c.y, c.r * 0.25, c.x, c.y, c.r * 2.5);
+        g.addColorStop(0, `rgba(148, 163, 184, ${c.alpha})`);
+        g.addColorStop(0.55, `rgba(71, 85, 105, ${c.alpha * 0.75})`);
+        g.addColorStop(1, 'rgba(15, 23, 42, 0)');
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(c.x, c.y, c.radius * 2.2, 0, Math.PI * 2);
-        ctx.arc(c.x + c.radius * 1.1, c.y + 10, c.radius * 1.7, 0, Math.PI * 2);
-        ctx.arc(c.x - c.radius * 1.1, c.y + 14, c.radius * 1.6, 0, Math.PI * 2);
+        ctx.arc(c.x, c.y, c.r * 2.4, 0, Math.PI * 2);
         ctx.fill();
       });
 
-      // Draw Moving Wind Streamlines
       windLines.forEach((w) => {
         w.x += w.speed;
-        w.y += Math.sin(tick + w.x * 0.01) * 0.35;
-        if (w.x > width + w.length) {
-          w.x = -w.length;
-          w.y = Math.random() * height;
-        }
-        const wGrad = ctx.createLinearGradient(w.x, w.y, w.x + w.length, w.y);
-        wGrad.addColorStop(0, 'rgba(0, 242, 254, 0)');
-        wGrad.addColorStop(0.5, `rgba(0, 242, 254, ${w.alpha})`);
-        wGrad.addColorStop(1, 'rgba(0, 242, 254, 0)');
-        ctx.strokeStyle = wGrad;
+        if (w.x > width + w.len) { w.x = -w.len; w.y = Math.random() * height; }
+        const wg = ctx.createLinearGradient(w.x, w.y, w.x + w.len, w.y);
+        wg.addColorStop(0, 'rgba(0, 242, 254, 0)');
+        wg.addColorStop(0.5, `rgba(0, 242, 254, ${w.alpha})`);
+        wg.addColorStop(1, 'rgba(0, 242, 254, 0)');
+        ctx.strokeStyle = wg;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(w.x, w.y);
-        ctx.lineTo(w.x + w.length, w.y);
+        ctx.lineTo(w.x + w.len, w.y + Math.sin(tick) * 2);
         ctx.stroke();
       });
 
-      // Draw Rain or Snow Particles
-      particles.forEach((p) => {
+      drops.forEach((p) => {
         p.x += p.vx;
         p.y += p.vy;
-        if (p.y > height) {
-          p.y = -20;
-          p.x = Math.random() * width;
-        }
+        if (p.y > height) { p.y = -20; p.x = Math.random() * width; }
         if (p.x > width) p.x = 0;
-
         if (isRain) {
           ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-          ctx.lineWidth = 1.4;
+          ctx.lineWidth = 1.3;
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p.x + p.vx * 1.6, p.y + p.size);
+          ctx.lineTo(p.x + p.vx * 1.5, p.y + p.size);
           ctx.stroke();
         } else {
           ctx.fillStyle = 'rgba(224, 242, 254, 0.75)';
@@ -164,63 +182,63 @@ export const AtmosphericBackground: React.FC<AtmosphericBackgroundProps> = ({ st
 
       animId = requestAnimationFrame(render);
     };
-
     animId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', onResize);
     };
-  }, [cloudCover, isNight, isRain, isSnow, isStorm, windKph, windSpeedMultiplier]);
+  }, [cloudCover, isRain, isSnow, isStorm, windFactor, windKph]);
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 select-none">
-      {/* Real-Time 60FPS Physics Canvas for Clouds, Wind, Rain & Snow */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-
-      {/* Animated Rotating Sun (Daytime) */}
-      {showSun && (
-        <div className="absolute top-6 right-6 sm:top-10 sm:right-16 w-44 h-44 sm:w-64 sm:h-64 flex items-center justify-center">
-          <motion.div
-            animate={{ scale: [1, 1.18, 1], opacity: [0.45, 0.75, 0.45] }}
-            transition={{ duration: Math.max(2.5, 6 - windSpeedMultiplier), repeat: Infinity, ease: 'easeInOut' }}
-            className="absolute inset-0 rounded-full bg-amber-400/25 blur-2xl"
-          />
-          <motion.svg
-            animate={{ rotate: 360 }}
-            transition={{ duration: Math.max(14, 36 - windKph * 0.5), repeat: Infinity, ease: 'linear' }}
-            className="w-full h-full text-amber-300/45"
-            viewBox="0 0 100 100"
-          >
-            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
-              <line
-                key={deg}
-                x1="50"
-                y1="10"
-                x2="50"
-                y2="22"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                transform={`rotate(${deg} 50 50)`}
-              />
-            ))}
-            <circle cx="50" cy="50" r="22" fill="rgba(251, 191, 36, 0.35)" />
-          </motion.svg>
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-400 shadow-[0_0_60px_#fbbf24]" />
-        </div>
-      )}
-
-      {/* Animated Glowing Moon (Nighttime) */}
-      {isNight && (
+      {/* LAYER 1 (BEHIND CLOUDS): Real-Time Sun (Sunrise -> Sunset) */}
+      {celestial.sun.visible && (
         <motion.div
-          animate={{ y: [-6, 6, -6] }}
-          transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute top-10 right-8 sm:right-20 w-24 h-24 sm:w-32 sm:h-32 flex items-center justify-center"
+          animate={{
+            left: `${celestial.sun.leftVw}vw`,
+            top: `${celestial.sun.topVh}vh`,
+            opacity: celestial.visibilityFactor,
+          }}
+          transition={{ duration: 1.5, ease: 'easeOut' }}
+          style={{ transform: 'translate(-50%, -50%)' }}
+          className="absolute z-0 w-72 h-72 sm:w-[420px] sm:h-[420px] flex items-center justify-center"
         >
-          <div className="absolute inset-0 rounded-full bg-indigo-400/25 blur-2xl animate-pulse" />
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-slate-100 via-indigo-100 to-slate-300 shadow-[0_0_50px_rgba(165,180,252,0.8)]" />
+          <div
+            className="w-full h-full rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(251,191,36,0.5) 0%, rgba(245,158,11,0.2) 42%, transparent 72%)',
+              filter: 'blur(18px)',
+            }}
+          />
+          <div className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-amber-300/45 blur-xl shadow-[0_0_90px_#fbbf24]" />
         </motion.div>
       )}
+
+      {/* LAYER 1B (BEHIND CLOUDS): Real-Time Moon (Moonrise -> Moonset) */}
+      {celestial.moon.visible && (
+        <motion.div
+          animate={{
+            left: `${celestial.moon.leftVw}vw`,
+            top: `${celestial.moon.topVh}vh`,
+            opacity: celestial.visibilityFactor,
+          }}
+          transition={{ duration: 1.5, ease: 'easeOut' }}
+          style={{ transform: 'translate(-50%, -50%)' }}
+          className="absolute z-0 w-60 h-60 sm:w-80 sm:h-80 flex items-center justify-center"
+        >
+          <div
+            className="w-full h-full rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(165,180,252,0.4) 0%, rgba(99,102,241,0.16) 45%, transparent 72%)',
+              filter: 'blur(18px)',
+            }}
+          />
+          <div className="absolute w-16 h-16 sm:w-22 sm:h-22 rounded-full bg-indigo-100/50 blur-md shadow-[0_0_70px_#818cf8]" />
+        </motion.div>
+      )}
+
+      {/* LAYER 2 (IN FRONT OF SUN/MOON): Moving Clouds, Wind & Rain that physically cover Sun/Moon */}
+      <canvas ref={canvasRef} className="absolute inset-0 z-10 w-full h-full" />
     </div>
   );
 };

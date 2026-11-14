@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import { WeatherStation, ThemeConfig } from '../types';
+import WeatherMediaSection from './WeatherMediaSection';
 
 interface WeatherRadarSectionProps {
   station: WeatherStation;
@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { id: 'sec-forecast', label: '16D Timeline', short: 'Timeline', icon: '◷' },
   { id: 'sec-radar', label: 'Live Radar', short: 'Radar', icon: '⊕' },
   { id: 'sec-hazards', label: 'Advisories', short: 'Alerts', icon: '⚡' },
-  { id: 'sec-media', label: 'Briefings', short: 'Media', icon: '▣' },
+  { id: 'sec-media', label: 'Video & News', short: 'Media', icon: '▣' },
 ];
 
 export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ station, theme }) => {
@@ -31,8 +31,6 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
   };
 
   const mapEmbedUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&zoom=7&level=surface&overlay=${layer}&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&metricWind=km%2Fh&metricTemp=%C2%B0C`;
-
-  const mediaList = [...(station.weatherVideos ?? []), ...(station.weatherNews ?? [])];
 
   return (
     <>
@@ -60,7 +58,7 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
         })}
       </aside>
 
-      {/* 2. MOBILE & TABLET BOTTOM NAVIGATION DOCK (100% Responsive < 1280px) */}
+      {/* 2. MOBILE & TABLET BOTTOM NAVIGATION DOCK */}
       <nav className="xl:hidden fixed bottom-2.5 inset-x-3 z-40 p-1.5 rounded-2xl abyssal-glass border border-white/15 shadow-abyssal flex items-center justify-around gap-1">
         {NAV_ITEMS.map((item) => {
           const active = activeNav === item.id;
@@ -121,63 +119,8 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
         </div>
       </section>
 
-      {/* 4. HAZARDS & ATMOSPHERIC ADVISORIES */}
-      {station.hazards && station.hazards.length > 0 && (
-        <section id="sec-hazards" className="mt-10 scroll-mt-24">
-          <div className="flex items-center gap-2.5 mb-4">
-            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]" />
-            <h3 className="font-display font-medium text-xs sm:text-sm tracking-[0.2em] uppercase text-white">
-              ATMOSPHERIC ADVISORIES & TELEMETRY ALERTS
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {station.hazards.map((hz, i) => (
-              <motion.div
-                key={i}
-                whileHover={{ y: -3 }}
-                className={`p-4 sm:p-5 rounded-3xl abyssal-glass ${theme.underglow} border border-amber-400/20`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                  <span className="font-mono text-xs font-semibold text-amber-300 uppercase">{hz.title}</span>
-                  <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/[0.05] text-slate-400">
-                    {hz.source}
-                  </span>
-                </div>
-                <p className="font-mono text-xs text-slate-300 leading-relaxed">{hz.description}</p>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* 5. WEATHER VIDEOS & METEOROLOGICAL BRIEFINGS */}
-      {mediaList.length > 0 && (
-        <section id="sec-media" className="mt-10 pb-8 scroll-mt-24">
-          <div className="flex items-center gap-2.5 mb-4">
-            <span className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_8px_#a855f7]" />
-            <h3 className="font-display font-medium text-xs sm:text-sm tracking-[0.2em] uppercase text-white">
-              METEOROLOGICAL BRIEFINGS & REGIONAL DISPATCH
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {mediaList.map((item, i) => (
-              <motion.div
-                key={i}
-                whileHover={{ y: -4 }}
-                className={`p-4 rounded-3xl abyssal-glass ${theme.underglow} border border-white/[0.06] flex flex-col justify-between gap-3`}
-              >
-                <div>
-                  <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300">
-                    {item.source}
-                  </span>
-                  <h4 className="font-display text-sm text-white mt-2">{item.title}</h4>
-                  <p className="font-mono text-[11px] text-slate-400 mt-1.5 leading-relaxed">{item.description}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* 4. ALWAYS-VISIBLE ADVISORIES, VIDEO BRIEFINGS & LIVE NEWS */}
+      <WeatherMediaSection station={station} theme={theme} />
     </>
   );
 };
