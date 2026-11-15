@@ -2,14 +2,12 @@ import { WeatherStation, WeatherCondition, DailyForecast, HourlyForecast, AlertO
 
 const COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
-// Real Astronomical Lunar Cycle (29.53059 days) -> Returns "Waxing Crescent", etc.
 function computeRealMoonPhase(date = new Date()): { phase: string; illumination: number } {
   const synodicMonth = 29.53058867;
   const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14, 0);
   const daysSince = (date.getTime() - knownNewMoon) / 86400000;
   const cyclePos = ((daysSince % synodicMonth) + synodicMonth) % synodicMonth;
-  const frac = cyclePos / synodicMonth;
-  const illumination = Math.round((1 - Math.cos(frac * 2 * Math.PI)) * 50);
+  const illumination = Math.round((1 - Math.cos((cyclePos / synodicMonth) * 2 * Math.PI)) * 50);
 
   if (cyclePos < 1.84) return { phase: 'New Moon', illumination };
   if (cyclePos < 5.53) return { phase: 'Waxing Crescent', illumination };
@@ -18,8 +16,7 @@ function computeRealMoonPhase(date = new Date()): { phase: string; illumination:
   if (cyclePos < 16.61) return { phase: 'Full Moon', illumination };
   if (cyclePos < 20.30) return { phase: 'Waning Gibbous', illumination };
   if (cyclePos < 23.99) return { phase: 'Last Quarter', illumination };
-  if (cyclePos < 27.68) return { phase: 'Waning Crescent', illumination };
-  return { phase: 'New Moon', illumination };
+  return { phase: 'Waning Crescent', illumination };
 }
 
 function to12Hour(timeStr?: string, fallback = '06:42 AM'): string {
@@ -28,10 +25,9 @@ function to12Hour(timeStr?: string, fallback = '06:42 AM'): string {
   const m = timeStr.trim().match(/(\d{1,2}):(\d{2})/);
   if (!m) return timeStr;
   let h = parseInt(m[1], 10);
-  const min = m[2];
   const mer = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
-  return `${String(h).padStart(2, '0')}:${min} ${mer}`;
+  return `${String(h).padStart(2, '0')}:${m[2]} ${mer}`;
 }
 
 export function deriveAtmosphericTheme(tempC: number, condition = ''): WeatherCondition {
@@ -47,7 +43,6 @@ export function iconFromCondition(cond = ''): DailyForecast['iconType'] {
   if (/storm|thunder/.test(c)) return 'storm';
   if (/snow|ice|frost/.test(c)) return 'snow';
   if (/rain|drizzle|shower/.test(c)) return 'rain';
-  if (c.includes('aurora')) return 'aurora';
   if (/overcast|fog|haze|mist|partly cloudy/.test(c)) return 'cloud';
   return 'sun';
 }
@@ -126,53 +121,52 @@ function mapDailyList(rawList: any[] | undefined, baseTemp: number, baseCond: st
   });
 }
 
-function buildLiveTelemetryMedia(city: string, tempC: number, cond: string, windSpeed: number, aqi: number, uv: number, hum: number) {
+// 4 Real Actionable Suggestions (Respiratory/AQI, Driving/Visibility, Outdoor/UV, Clothing/Comfort)
+function buildSmartSuggestionsAndMedia(city: string, tempC: number, cond: string, windSpeed: number, aqi: number, uv: number, visKm: number) {
   const hazards: AlertOrMediaItem[] = [
     {
-      title: aqi > 100 ? `Air Quality Alert · AQI ${aqi} (Poor)` : `Atmospheric Stability · ${city}`,
-      description: `Deteriorating air quality over ${city} (US AQI ${aqi}) with ${hum}% relative humidity and ${windSpeed} km/h winds.`,
-      source: 'SKYFORGE DOPPLER',
+      source: 'RESPIRATORY CARE',
+      title: aqi >= 300 ? `N95 Mask Advised (AQI ${aqi})` : aqi > 150 ? `Limit Cardio Outdoors (AQI ${aqi})` : `Clean Air Window (AQI ${aqi})`,
+      description: aqi >= 300 ? `Severe smog in ${city}. Avoid morning/late-evening jogging, keep indoor air purifiers active, and wear an N95 mask outside.` : aqi > 150 ? `Elevated PM2.5 levels. Asthma and sensitive individuals should reduce heavy outdoor exercise.` : `Air quality is favorable for outdoor sports and ventilation.`,
     },
     {
-      title: `Barometric & Thermal Watch · ${tempC}°C`,
-      description: `Surface sensors in ${city} report ${tempC}°C (${cond.toLowerCase()}) with ${hum}% moisture and peak UV Index ${uv}.`,
-      source: 'METEOROLOGICAL CORE',
+      source: 'HIGHWAY & VISIBILITY',
+      title: visKm <= 3.5 ? `Smog/Mist Caution (${visKm} km)` : `Clear Road Visibility (${visKm} km)`,
+      description: visKm <= 3.5 ? `Reduced visibility due to winter haze/smog around ${city}. Use low-beam fog lights during early morning and night drives.` : `Optical visibility is clear across major highways and transit corridors.`,
+    },
+    {
+      source: 'OUTDOOR & UV GUIDE',
+      title: uv >= 5 ? `SPF 30+ & Sunglasses (UV ${uv})` : `Comfortable Solar Index (UV ${uv})`,
+      description: uv >= 5 ? `Moderate-to-high midday UV radiation between 11 AM – 3 PM. Apply sunscreen and stay hydrated.` : `Safe UV levels for outdoor work, farming, and daytime travel.`,
+    },
+    {
+      source: 'THERMAL CLOTHING',
+      title: tempC <= 18 ? `Layer Up Tonight (${tempC}°C)` : `Light Cotton & Evening Layer (${tempC}°C)`,
+      description: `Daytime feels pleasant at ${tempC}°C, but nocturnal temperatures drop quickly after sunset—carry a light jacket for evening commute.`,
     },
   ];
   const weatherVideos: AlertOrMediaItem[] = [
     {
-      title: `${city} Live Satellite & Doppler Radar Stream`,
-      description: `Real-time IR cloud cover, wind vector streamlines, and precipitation radar tracking over ${city} (${tempC}°C, ${cond}).`,
-      source: 'LIVE SATELLITE STREAM',
+      title: `${city} & Regional Live Satellite Weather Stream`,
+      description: `Watch 24x7 live international and regional meteorological satellite radar, jetstream winds (${windSpeed} km/h), and storm tracking.`,
+      source: 'LIVE SATELLITE TV',
     },
     {
-      title: `Regional Atmospheric Jetstream & 16-Day Outlook: ${city}`,
-      description: `Synoptic pressure analysis, AQI dispersion model (AQI ${aqi}), and wind velocity forecast (${windSpeed} km/h) for ${city}.`,
-      source: 'SKYFORGE BRIEFING',
+      title: `Air Quality (AQI ${aqi}) & 16-Day Climate Forecast Briefing`,
+      description: `Live meteorological analysis covering PM2.5 smog dispersion, temperature trends (${tempC}°C), and upcoming weather systems.`,
+      source: 'WEATHER DESK LIVE',
     },
   ];
-  const weatherNews: AlertOrMediaItem[] = [
-    {
-      title: `${city} Weather Dispatch: ${cond} at ${tempC}°C with ${hum}% Humidity`,
-      description: `Local meteorological stations in ${city} record ${tempC}°C temperatures, ${windSpeed} km/h surface winds, and an Air Quality Index of ${aqi}.`,
-      source: 'REGIONAL DISPATCH',
-    },
-    {
-      title: `16-Day Climatic Trend & Agricultural Advisory for ${city}`,
-      description: `Extended range models indicate cooling nocturnal temperatures and ${hum}% moisture levels across the ${city} region.`,
-      source: 'CLIMATE DESK',
-    },
-  ];
-  return { hazards, weatherVideos, weatherNews };
+  return { hazards, weatherVideos };
 }
 
 export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
   const data = raw?.data ?? raw ?? {};
-  const tempC = Math.round(Number(data.temperature ?? data.temp ?? 23));
+  const tempC = Math.round(Number(data.temperature ?? data.temp ?? 25));
   const feelsLikeC = Math.round(Number(data.feelsLike ?? tempC));
   const today = Array.isArray(data.forecast) && data.forecast[0] ? data.forecast[0] : {};
-  const highC = Math.round(Number(today.maxTemp ?? data.high ?? tempC + 4));
-  const lowC = Math.round(Number(today.minTemp ?? data.low ?? tempC - 4));
+  const highC = Math.round(Number(today.maxTemp ?? data.high ?? tempC + 3));
+  const lowC = Math.round(Number(today.minTemp ?? data.low ?? tempC - 7));
 
   const city = String(data.city ?? data.cityName ?? (query || 'New Delhi')).toUpperCase();
   const region = String(data.region ?? '').trim();
@@ -180,14 +174,14 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
   const lat = Number(data.lat ?? 29.1455);
   const lon = Number(data.lon ?? 77.6143);
   const condition = String(data.condition ?? 'MOSTLY CLEAR').toUpperCase();
-  const humidity = Math.min(100, Math.max(0, Math.round(Number(data.humidity ?? 70))));
-  const windSpeed = Number(Number(data.windSpeed ?? 5).toFixed(1));
-  const windAngle = Math.round(Number(data.windDegree ?? 340)) % 360;
+  const humidity = Math.min(100, Math.max(0, Math.round(Number(data.humidity ?? 58))));
+  const windSpeed = Number(Number(data.windSpeed ?? 6.5).toFixed(1));
+  const windAngle = Math.round(Number(data.windDegree ?? 330)) % 360;
   const computedDir = COMPASS_16[Math.round(windAngle / 22.5) % 16];
-  const uvIndex = Number(Number(data.uvIndex ?? today.uv ?? 3).toFixed(1));
-  const visibilityKm = Number(Number(data.visibility ?? 3).toFixed(1));
+  const uvIndex = Number(Number(data.uvIndex ?? today.uv ?? 4).toFixed(1));
+  const visibilityKm = Number(Number(data.visibility ?? 2.5).toFixed(1));
   const pressureHpa = Math.round(Number(data.pressure ?? 1015));
-  const aqi = Math.round(Number(data.aqi ?? 168));
+  const aqi = Math.round(Number(data.aqi ?? 348));
   const dewPointC = Math.round(Number(data.dewPoint ?? (tempC - (100 - humidity) / 5)));
   const lunar = computeRealMoonPhase(new Date());
 
@@ -195,7 +189,7 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
   const rawHist = Array.isArray(data.history) && data.history.length ? [...data.history].slice(-7).reverse() : [];
   const history3d = mapDailyList(rawHist, tempC, condition, humidity, windSpeed).slice(0, 7);
   const forecast24h = mapHours(data.hourlyChart ?? today.hours, tempC, condition, windSpeed);
-  const fallbackMedia = buildLiveTelemetryMedia(city, tempC, condition, windSpeed, aqi, uvIndex, humidity);
+  const smartMedia = buildSmartSuggestionsAndMedia(city, tempC, condition, windSpeed, aqi, uvIndex, visibilityKm);
 
   return {
     id: city.toLowerCase().replace(/\s+/g, '-'),
@@ -226,32 +220,32 @@ export function mapBackendToFrontend(raw: any, query: string): WeatherStation {
     uvIndex,
     uvDescription: data.uvStatus ?? (uvIndex >= 8 ? 'Very High UV' : uvIndex >= 6 ? 'High UV' : uvIndex >= 3 ? 'Moderate UV' : 'Low UV'),
     visibilityKm,
-    visibilityStatus: data.visibilityStatus ?? (visibilityKm >= 8 ? 'Clear Visibility' : visibilityKm >= 4 ? 'Moderate Clarity' : 'Haze / Mist'),
+    visibilityStatus: data.visibilityStatus ?? (visibilityKm >= 8 ? 'Clear Visibility' : visibilityKm >= 4 ? 'Moderate Clarity' : 'Smog / Haze'),
     pressureHpa,
     pressureTendency: data.pressureTrend ?? (pressureHpa >= 1014 ? 'Rising Slowly' : pressureHpa <= 1007 ? 'Low · Falling' : 'Normal · Stable'),
     precipitationMm: Number(data.precipitationMm ?? 0),
     forecast24h,
     dewPointC,
-    cloudCover: Number(data.cloudCover ?? 15),
+    cloudCover: Number(data.cloudCover ?? 10),
     aqi,
-    aqiLevel: data.aqiStatus ?? (aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : aqi <= 150 ? 'Unhealthy (Sensitive)' : 'Poor'),
+    aqiLevel: aqi > 300 ? 'Severe' : aqi > 200 ? 'Very Poor' : aqi > 100 ? 'Poor' : aqi > 50 ? 'Moderate' : 'Good',
     aqiDominant: String(data.dominantPollutant ?? 'PM2.5'),
-    pm2_5: Math.round(Number(data.pm2_5 ?? 75)),
-    pm10: Math.round(Number(data.pm10 ?? 112)),
-    no2: Math.round(Number(data.no2 ?? 18)),
-    o3: Math.round(Number(data.o3 ?? 66)),
+    pm2_5: Math.round(Number(data.pm2_5 ?? 185)),
+    pm10: Math.round(Number(data.pm10 ?? 295)),
+    no2: Math.round(Number(data.no2 ?? 22)),
+    o3: Math.round(Number(data.o3 ?? 88)),
     so2: data.so2,
     co: data.co,
     sunrise: to12Hour(data.sunrise, '06:42 AM'),
     sunset: to12Hour(data.sunset, '05:25 PM'),
     moonrise: data.moonrise ?? '11:01 AM',
     moonset: data.moonset ?? '09:19 PM',
-    moonPhase: data.moonPhase && data.moonPhase !== 'Waxing Gibbous' ? data.moonPhase : lunar.phase,
-    moonIllumination: data.moonIllumination ?? lunar.illumination,
+    moonPhase: lunar.phase,
+    moonIllumination: lunar.illumination,
     forecast7d,
     history3d,
-    hazards: Array.isArray(data.hazards) && data.hazards.length > 0 ? data.hazards : fallbackMedia.hazards,
-    weatherVideos: Array.isArray(data.weatherVideos) && data.weatherVideos.length > 0 ? data.weatherVideos : fallbackMedia.weatherVideos,
-    weatherNews: Array.isArray(data.weatherNews) && data.weatherNews.length > 0 ? data.weatherNews : fallbackMedia.weatherNews,
+    hazards: smartMedia.hazards,
+    weatherVideos: smartMedia.weatherVideos,
+    weatherNews: data.weatherNews ?? [],
   };
 }

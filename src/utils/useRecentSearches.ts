@@ -1,12 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  getAuthToken,
-  fetchFavoriteCitiesFromDb,
-  addFavoriteCityToDb,
-} from '../services/api';
+import { getAuthToken, fetchFavoriteCitiesFromDb, addFavoriteCityToDb } from '../services/api';
 
 const STORAGE_KEY = 'skyforge_recent_searches';
-const MAX_ENTRIES = 6;
+const MAX_ENTRIES = 3; // Strict 3-city limit so mobile header never gets cluttered
 
 export interface RecentSearchesState {
   recentSearches: string[];
@@ -36,7 +32,7 @@ function loadFromStorage(): string[] {
 
 function saveToStorage(searches: string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(searches));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(searches.slice(0, MAX_ENTRIES)));
   } catch {}
 }
 
@@ -48,7 +44,6 @@ export function getMostRecentSearch(): string | null {
 export function useRecentSearches(): RecentSearchesState {
   const [recentSearches, setRecentSearches] = useState<string[]>(() => loadFromStorage());
 
-  // Sync user's saved Favorite Cities from PostgreSQL DB when logged in
   useEffect(() => {
     if (!getAuthToken()) return;
     fetchFavoriteCitiesFromDb().then((dbFavorites) => {
@@ -58,9 +53,7 @@ export function useRecentSearches(): RecentSearchesState {
         const combined = [...prev, ...dbNames].filter(Boolean);
         const unique: string[] = [];
         for (const c of combined) {
-          if (!unique.some((u) => u.toLowerCase() === c.toLowerCase())) {
-            unique.push(c);
-          }
+          if (!unique.some((u) => u.toLowerCase() === c.toLowerCase())) unique.push(c);
         }
         const final = unique.slice(0, MAX_ENTRIES);
         saveToStorage(final);
@@ -72,11 +65,7 @@ export function useRecentSearches(): RecentSearchesState {
   const addSearch = useCallback((city: string) => {
     const normalized = toTitleCase(city || '');
     if (!normalized) return;
-
-    // Persist to PostgreSQL favorite_cities table if user is logged in
-    if (getAuthToken()) {
-      addFavoriteCityToDb(normalized);
-    }
+    if (getAuthToken()) addFavoriteCityToDb(normalized);
 
     setRecentSearches((prev) => {
       const deduplicated = prev.filter((e) => e.toLowerCase() !== normalized.toLowerCase());

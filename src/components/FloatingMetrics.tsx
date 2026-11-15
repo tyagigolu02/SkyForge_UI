@@ -9,12 +9,12 @@ interface FloatingMetricsProps {
   isCelsius?: boolean;
 }
 
-function getAqiBadgeClass(level?: string): string {
-  const l = (level || '').toLowerCase();
-  if (l.includes('good')) return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
-  if (l.includes('moderate')) return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
-  if (l.includes('unhealthy')) return 'bg-orange-500/20 text-orange-300 border-orange-400/30';
-  return 'bg-rose-500/25 text-rose-300 border-rose-400/35';
+function getAqiBadgeClass(aqi = 50): string {
+  if (aqi <= 50) return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
+  if (aqi <= 100) return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
+  if (aqi <= 200) return 'bg-orange-500/20 text-orange-300 border-orange-400/30';
+  if (aqi <= 300) return 'bg-rose-500/25 text-rose-300 border-rose-400/35';
+  return 'bg-purple-600/30 text-purple-200 border-purple-400/45 shadow-[0_0_12px_rgba(168,85,247,0.4)]';
 }
 
 export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
@@ -28,7 +28,13 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
   const accent = theme.accentHex || '#00f2fe';
   const formatTemp = (c?: number) => (c == null ? '--' : isCelsius ? Math.round(c) : Math.round((c * 9) / 5 + 32));
   const tempUnit = isCelsius ? '°C' : '°F';
-  const aqiPct = station.aqi != null ? Math.min(97, Math.max(3, (station.aqi / 500) * 100)) : 20;
+  const aqiVal = station.aqi ?? 100;
+  const aqiPct = Math.min(97, Math.max(3, (aqiVal / 500) * 100));
+
+  // Dynamic aerodynamic oscillation for the compass arrow based on windSpeed
+  const baseAngle = station.windAngle ?? 315;
+  const swayDeg = Math.min(12, Math.max(3, Math.round((station.windSpeed || 5) * 0.45)));
+  const swayDuration = Math.max(1.1, 3.2 - Math.min(2, (station.windSpeed || 5) * 0.06));
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -41,25 +47,25 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
       >
         <div className="flex items-center justify-between gap-2 mb-2">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">{t('metrics.airQuality')}</span>
-          <span className={`font-mono text-[9px] px-2 py-0.5 rounded-full border ${getAqiBadgeClass(station.aqiLevel)}`}>
-            {station.aqiLevel ?? 'Moderate'}
+          <span className={`font-mono text-[9px] px-2.5 py-0.5 rounded-full border ${getAqiBadgeClass(aqiVal)}`}>
+            {station.aqiLevel ?? 'Poor'}
           </span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="font-display font-light text-3xl text-white">{station.aqi ?? '--'}</span>
-          <span className="font-mono text-[11px] text-slate-400">US AQI</span>
+          <span className="font-display font-light text-3xl text-white">{aqiVal}</span>
+          <span className="font-mono text-[11px] text-slate-400">AQI</span>
         </div>
         <div className="mt-3 relative">
           <div className="w-full h-1.5 rounded-full overflow-hidden bg-white/[0.06]">
-            <div className="h-full w-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-600 rounded-full" />
+            <div className="h-full w-full bg-gradient-to-r from-emerald-400 via-amber-400 via-rose-500 to-purple-600 rounded-full" />
           </div>
           <div className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-900" style={{ left: `${aqiPct}%`, transform: 'translate(-50%, -50%)' }} />
         </div>
         <div className="grid grid-cols-4 gap-1.5 mt-3 pt-2.5 border-t border-white/[0.06] font-mono text-[9px] text-center">
-          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">PM2.5</span><span className="text-cyan-300">{Math.round(station.pm2_5 ?? 35)}</span></div>
-          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">PM10</span><span className="text-cyan-300">{Math.round(station.pm10 ?? 68)}</span></div>
-          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">NO₂</span><span className="text-cyan-300">{Math.round(station.no2 ?? 18)}</span></div>
-          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">O₃</span><span className="text-cyan-300">{Math.round(station.o3 ?? 52)}</span></div>
+          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">PM2.5</span><span className="text-cyan-300">{Math.round(station.pm2_5 ?? 185)}</span></div>
+          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">PM10</span><span className="text-cyan-300">{Math.round(station.pm10 ?? 290)}</span></div>
+          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">NO₂</span><span className="text-cyan-300">{Math.round(station.no2 ?? 24)}</span></div>
+          <div className="p-1 rounded-lg bg-white/[0.03]"><span className="text-slate-400 block">O₃</span><span className="text-cyan-300">{Math.round(station.o3 ?? 68)}</span></div>
         </div>
       </motion.div>
 
@@ -81,7 +87,7 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
               <span className="font-mono text-xs text-cyan-300">%</span>
             </div>
             <p className="font-mono text-[10px] text-slate-400 mt-1">{station.vaporStatus}</p>
-            <p className="font-mono text-[10px] text-slate-500 mt-1.5">
+            <p className="font-mono text-[10px] text-slate-400 mt-1.5">
               {t('metrics.dewPoint')}: <span className="text-cyan-300 font-semibold">{formatTemp(station.dewPointC)}{tempUnit}</span>
             </p>
           </div>
@@ -94,7 +100,7 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
         </div>
       </motion.div>
 
-      {/* 3. WIND VECTOR */}
+      {/* 3. WIND VECTOR: 4-Direction Compass with Live Fluttering Anemometer Arrow */}
       <motion.div
         animate={{ y: [-3, 4, -3] }}
         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
@@ -103,21 +109,66 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
       >
         <div className="flex items-center justify-between mb-3">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">{t('metrics.windVelocity')}</span>
-          <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/[0.05] text-cyan-300">{station.windDirection} · {station.windAngle}°</span>
+          <span className="font-mono text-[9px] px-2 py-0.5 rounded-full bg-white/[0.05] text-cyan-300">
+            {station.windDirection} · {baseAngle}°
+          </span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="relative w-14 h-14 rounded-full border border-cyan-400/20 flex items-center justify-center flex-shrink-0">
-            <motion.div animate={{ rotate: station.windAngle }} className="w-full h-full absolute inset-0 flex items-center justify-center">
-              <div className="w-1 h-6 bg-gradient-to-t from-transparent via-cyan-400 to-cyan-200 rounded-full shadow-[0_0_10px_#00f2fe]" />
-            </motion.div>
-            <span className="font-mono text-[9px] font-bold text-slate-400">N</span>
+          <div className="relative w-16 h-16 flex items-center justify-center flex-shrink-0 select-none">
+            {/* Subtle Pulsing Wind Radar Aura */}
+            <motion.div
+              animate={{ scale: [0.85, 1.12, 0.85], opacity: [0.15, 0.35, 0.15] }}
+              transition={{ duration: swayDuration, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute inset-2 rounded-full bg-cyan-400/20 blur-sm"
+            />
+            <svg className="w-full h-full" viewBox="0 0 64 64" fill="none">
+              <path d="M 38 9 A 24 24 0 0 1 55 26" stroke="rgba(255,255,255,0.2)" strokeWidth="3.2" strokeLinecap="round" />
+              <path d="M 55 38 A 24 24 0 0 1 38 55" stroke="rgba(255,255,255,0.2)" strokeWidth="3.2" strokeLinecap="round" />
+              <path d="M 26 55 A 24 24 0 0 1 9 38" stroke="rgba(255,255,255,0.2)" strokeWidth="3.2" strokeLinecap="round" />
+              <path d="M 9 26 A 24 24 0 0 1 26 9" stroke="rgba(255,255,255,0.2)" strokeWidth="3.2" strokeLinecap="round" />
+              <text x="32" y="11" textAnchor="middle" className="fill-cyan-300 font-mono text-[8px] font-bold">N</text>
+              <text x="56" y="34.5" textAnchor="middle" className="fill-slate-400 font-mono text-[8px] font-semibold">E</text>
+              <text x="32" y="59" textAnchor="middle" className="fill-slate-400 font-mono text-[8px] font-semibold">S</text>
+              <text x="8" y="34.5" textAnchor="middle" className="fill-slate-400 font-mono text-[8px] font-semibold">W</text>
+            </svg>
+
+            {/* Live Fluttering Compass Arrow (Oscillates around windAngle!) */}
+            <motion.svg
+              key={baseAngle}
+              initial={{ rotate: baseAngle }}
+              animate={{
+                rotate: [
+                  baseAngle - swayDeg,
+                  baseAngle + swayDeg,
+                  baseAngle - Math.round(swayDeg * 0.5),
+                  baseAngle + Math.round(swayDeg * 0.7),
+                  baseAngle - swayDeg,
+                ],
+              }}
+              transition={{ duration: swayDuration, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute inset-0 w-full h-full"
+              viewBox="0 0 64 64"
+            >
+              <path
+                d="M 32 14 L 40 44 L 32 37.5 L 24 44 Z"
+                fill="#38bdf8"
+                stroke="#00f2fe"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+                style={{ filter: 'drop-shadow(0 0 8px rgba(0,242,254,0.8))' }}
+              />
+              <circle cx="32" cy="32" r="2.2" fill="#ffffff" />
+            </motion.svg>
           </div>
+
           <div>
             <div className="flex items-baseline gap-1">
               <span className="font-display font-light text-3xl text-white">{station.windSpeed}</span>
               <span className="font-mono text-xs text-slate-400">km/h</span>
             </div>
-            <p className="font-mono text-[10px] text-slate-500 mt-0.5">{t('metrics.gustsTo')} <span className="text-slate-300">{station.gusts} km/h</span></p>
+            <p className="font-mono text-[10px] text-slate-500 mt-0.5">
+              {t('metrics.gustsTo')} <span className="text-slate-300">{station.gusts} km/h</span>
+            </p>
           </div>
         </div>
       </motion.div>
@@ -159,7 +210,7 @@ export const FloatingMetrics: React.FC<FloatingMetricsProps> = ({
         </div>
         <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] font-mono text-[10px]">
           <span className="text-slate-400">{t('metrics.cloudCover')}</span>
-          <span className="text-slate-200 font-semibold">{station.cloudCover ?? 20}%</span>
+          <span className="text-slate-200 font-semibold">{station.cloudCover ?? 15}%</span>
         </div>
       </motion.div>
 

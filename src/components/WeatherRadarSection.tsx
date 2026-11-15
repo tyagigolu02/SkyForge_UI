@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sun, Activity, Calendar, Compass, Zap, PlaySquare } from 'lucide-react';
 import { WeatherStation, ThemeConfig } from '../types';
 import WeatherMediaSection from './WeatherMediaSection';
@@ -26,6 +26,38 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
   const lat = station.lat ?? 28.6139;
   const lon = station.lon ?? 77.209;
 
+  // Automatic Scroll-Spy: Highlights the active section in Sidebar & Mobile Dock while scrolling
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollBottom = window.innerHeight + window.scrollY;
+      const docHeight = document.documentElement.scrollHeight;
+
+      // If user is near the bottom of the page, select Media
+      if (docHeight - scrollBottom < 140) {
+        setActiveNav('sec-media');
+        return;
+      }
+
+      const triggerLine = window.innerHeight * 0.38;
+      let currentId = 'sec-overview';
+
+      for (const item of NAV_ITEMS) {
+        const el = document.getElementById(item.id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= triggerLine) {
+            currentId = item.id;
+          }
+        }
+      }
+      setActiveNav(currentId);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const scrollToSection = (id: string) => {
     setActiveNav(id);
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -51,8 +83,6 @@ export const WeatherRadarSection: React.FC<WeatherRadarSectionProps> = ({ statio
               }`}
             >
               <Icon className="w-5 h-5 stroke-[1.8] flex-shrink-0" />
-
-              {/* Floating Label Pill on Hover */}
               <span className="pointer-events-none absolute left-14 px-3 py-1.5 rounded-xl abyssal-glass border border-cyan-400/35 font-mono text-[11px] font-semibold uppercase tracking-wider text-cyan-200 whitespace-nowrap opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 shadow-abyssal">
                 {label}
               </span>
