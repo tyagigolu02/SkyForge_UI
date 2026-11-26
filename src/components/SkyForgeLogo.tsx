@@ -325,28 +325,28 @@ export const SkyForgeLogo: React.FC<SkyForgeLogoProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`inline-flex items-center gap-3.5 select-none ${onClick ? 'cursor-pointer' : ''} ${className}`}
+      className={`inline-flex items-center gap-2.5 sm:gap-3.5 min-w-0 select-none ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
       {InteractiveEmblem}
 
-      <div className="flex flex-col justify-center text-left">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col justify-center text-left min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap">
           {/* Brand Wordmark with Spatial Gradient */}
-          <span className="font-display font-black tracking-[0.18em] text-lg sm:text-xl bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400 drop-shadow-[0_2px_12px_rgba(0,242,254,0.3)]">
+          <span className="font-display font-black tracking-[0.15em] sm:tracking-[0.18em] text-base sm:text-xl whitespace-nowrap bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400 drop-shadow-[0_2px_12px_rgba(0,242,254,0.3)]">
             {t('brand.title')}
           </span>
 
           {showBadge && (
-            <span className="font-mono text-[9px] uppercase tracking-[0.22em] px-2.5 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300 border border-cyan-400/20 flex items-center gap-1 shadow-[0_0_10px_rgba(0,242,254,0.15)]">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="font-mono text-[8px] sm:text-[9px] uppercase tracking-[0.12em] sm:tracking-[0.22em] px-2 sm:px-2.5 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300 border border-cyan-400/20 inline-flex items-center gap-1 whitespace-nowrap flex-shrink-0 shadow-[0_0_10px_rgba(0,242,254,0.15)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse flex-shrink-0" />
               {t('brand.badge')}
             </span>
           )}
         </div>
 
-        <p className="font-mono text-[10px] text-slate-400 tracking-wider flex items-center gap-1.5">
-          <span className="text-cyan-400/80">⚡</span>
-          <span>{t('brand.subtitle')}</span>
+        <p className="font-mono text-[9px] sm:text-[10px] text-slate-400 tracking-wider flex items-center gap-1.5 min-w-0">
+          <span className="text-cyan-400/80 flex-shrink-0">⚡</span>
+          <span className="truncate">{t('brand.subtitle')}</span>
         </p>
       </div>
     </div>
