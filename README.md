@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="./public/skyforge-icon.jpg" alt="SkyForge Logo" width="110" height="110" />
+  <img src="./public/favicon.png" alt="SkyForge Logo" width="120" height="120" />
 
   # ⚡ SKYFORGE
   ### **High-Fidelity Spatial Meteorological & Atmospheric Telemetry Platform**
