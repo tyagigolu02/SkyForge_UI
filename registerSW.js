@@ -1,1 +1,1 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/SkyForge/sw.js', { scope: '/SkyForge/' })})}
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/SkyForge_UI/sw.js', { scope: '/SkyForge_UI/' })})}
