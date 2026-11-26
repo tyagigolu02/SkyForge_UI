@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['skyforge_icon.jpg', 'skyforge_icon.jpg', 'skyforge_icon.jpg'],
+      includeAssets: ['favicon.svg'],
       manifest: {
         name: 'SkyForge Weather Intelligence',
         short_name: 'SkyForge',
@@ -19,14 +19,9 @@ export default defineConfig(({ command }) => ({
         start_url: '/SkyForge_UI/',
         icons: [
           {
-            src: 'skyforge_icon.jpg',
-            sizes: '192x192',
-            type: 'image/jpg'
-          },
-          {
-            src: 'skyforge_icon.jpg',
-            sizes: '512x512',
-            type: 'image/jpeg',
+            src: 'favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
             purpose: 'any maskable'
           }
         ]
