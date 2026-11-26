@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: ['skyforge_icon.jpg', 'skyforge_icon.jpg', 'skyforge_icon.jpg'],
       manifest: {
         name: 'SkyForge Weather Intelligence',
         short_name: 'SkyForge',
@@ -15,25 +15,25 @@ export default defineConfig(({ command }) => ({
         theme_color: '#030712',
         background_color: '#030712',
         display: 'standalone',
-        scope: '/SkyForge/',
-        start_url: '/SkyForge/',
+        scope: '/SkyForge_UI/',
+        start_url: '/SkyForge_UI/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'skyforge_icon.jpg',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/jpg'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'skyforge_icon.jpg',
             sizes: '512x512',
-            type: 'image/png',
+            type: 'image/jpeg',
             purpose: 'any maskable'
           }
         ]
       }
     })
   ],
-  base: command === 'build' ? '/SkyForge/' : '/',
+  base: command === 'build' ? '/SkyForge_UI/' : '/',
   server: {
     port: 3000,
     open: true,
