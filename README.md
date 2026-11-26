@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="./public/pwa-192x192.png" alt="SkyForge Logo" width="110" height="110" />
+  <img src="./public/skyforge_icon.jpg" alt="SkyForge Logo" width="110" height="110" />
 
   # ⚡ SKYFORGE
   ### **High-Fidelity Spatial Meteorological & Atmospheric Telemetry Platform**
